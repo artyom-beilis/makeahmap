@@ -40,6 +40,7 @@
 std::vector<std::vector<uint16_t> > elevations;
 
 int map_size = 512;
+int river_width = 0;
 
 std::vector<std::vector<unsigned char> > bare_types;
 std::vector<std::vector<unsigned char> > types;
@@ -94,15 +95,15 @@ static const int map_type_in[][3] = {
  { 120, 0x12 }, //Mosaic grassland (50-70%) / forest or shrubland (20-50%) 
  { 130, 0x21 }, //Closed to open (>15%) (broadleaved or needleleaved, evergreen or deciduous) shrubland (<5m)
  { 140, 0x21 }, //Closed to open (>15%) herbaceous vegetation (grassland, savannas or lichens/mosses)
- { 150, 0x01 }, //Sparse (<15%) vegetation
+ { 150, 0x11 }, //Sparse (<15%) vegetation
  { 160, 0x24 }, //Closed to open (>15%) broadleaved forest regularly flooded (semi-permanently or temporarily) - Fresh or brackish water
  { 170, 0x25 }, //Closed (>40%) broadleaved forest or shrubland permanently flooded - Saline or brackish water
  { 180, 0x24 }, //Closed to open (>15%) grassland or woody vegetation on regularly flooded or waterlogged soil - Fresh, brackish or saline water
  { 190, 0x88 },    // Artificial surfaces and associated areas (Urban areas >50%)
  { 200, 0xAA },    // Bare areas
- { 210, 0x00 },    // Waterbodies
+ { 210, 0xAA },    // Waterbodies
  { 220, 0xCC },    // Permanent snow and ice
- { 230, 0x00 },    // No data (burnt areas, clouds,…)
+ { 230, 0xAA },    // No data (burnt areas, clouds,…)
  { -1, 0}
 };
 
@@ -157,16 +158,27 @@ void load_profile(std::istream &in)
     bool via_coord = false;
     double scale = -1;
     double lat_c=-1000,lon_c=-1000;
+    int line = 0;
     while(!in.eof()) {
         std::string s;
         std::getline(in,s);
-        if(s.empty() || s[0]=='#')
+        line++;
+        if(s[0]=='#')
+            continue;
+        bool found =false;
+        for(size_t i=0;i<s.size() && !found;i++) {
+            if(s[i]!=' ' && s[i] != '\t' && s[i] != '\r')
+                found = true;
+        }
+        if(!found)
             continue;
         std::istringstream ss(s);
         std::string key,value;
         ss >> key >> value;
         if(!ss) {
-            throw std::runtime_error("Invalid Entry " + s);
+            std::ostringstream ss;
+            ss << "Invalid entry in confiuguration file line " << line;
+            throw std::runtime_error(ss.str());
         }
         if(key == "map_size") {
             map_size = atoi(value.c_str());
@@ -186,6 +198,15 @@ void load_profile(std::istream &in)
         }
         else if(key == "map_name") {
             map_name = value;
+        }
+        else if(key == "shores") {
+            shores = value;
+        }
+        else if(key == "rivers") {
+            rivers = value;
+        }
+        else if(key == "river_width") {
+            river_width = atoi(value.c_str());
         }
         else if(key == "globcover_tiff_path") {
             tiff_file = value;
@@ -674,10 +695,17 @@ int main(int argc,char **argv)
         resample_type();
         write_reference_bmp();
         recolor();
-        make_beaches();
+        
+        water_generator gen(lat1,lat2,lon1,lon2,map_size * 32);
+        gen.load_land(shores);
+        gen.load_rivers(rivers,river_width);
+        gen.save_water_map(output_dir + "/waterd.bmp",true);
+        gen.save_water_map(output_dir + "/waterc.bmp",false);
+
+        // make_beaches();
         write_gndtype();
         read_elevations();
-        make_waterd();
+        // make_waterd();
         write_alt_map();
     }
     catch(std::exception const &e) {

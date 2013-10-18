@@ -35,6 +35,7 @@
 #include <string.h>
 #include <stdexcept>
 #include <math.h>
+#include <assert.h>
 
 
 inline void switch_endian(int &x)
@@ -129,7 +130,7 @@ public:
 		lon1=int(round(1e6*flon1));
 		lon2=int(round(1e6*flon2));
 		water_size = water_size_in;
-		watermap.resize(water_size*water_size,sea_mark);
+		watermap.resize(water_size*water_size / 4,0);
 
 		if(lat1 > lat2)
 			std::swap(lat1,lat2);
@@ -217,7 +218,7 @@ public:
 		close();
 	}
 
-	void save_water_map(std::string out)
+	void save_water_map(std::string out,bool is_waterd = true)
 	{
 		bmp::header hdr(water_size,water_size);
 		FILE *f=fopen(out.c_str(),"wb");
@@ -227,20 +228,22 @@ public:
 		fwrite(&hdr,1,sizeof(hdr),f);
 		std::vector<unsigned char> data(water_size);
 
-		unsigned char max=0;
-		for(size_t i=0;i<watermap.size();i++) {
-			max = std::max(watermap[i],max);
-		}
 		int pos = 0;
 		for(int r=0;r<water_size;r++) {
-			for(int c=0;c<water_size;c++)  {
-				data[c]=watermap[pos++] * 255 /max;
-				/*
-				if(watermap[pos++])
-					data[c]=0;
-				else
-					data[c]=255;
-				*/
+			for(int c=0;c<water_size;c++,pos++)  {
+                int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
+                if(is_waterd) {
+                    if(type != land_mark)
+        				data[c]=0;
+                    else
+                        data[c]=255;
+                }
+                else {
+                    if(type != land_mark)
+        				data[c]=255;
+                    else
+                        data[c]=0;
+                }
 			}
 			if(fwrite(&data[0],1,data.size(),f)!=data.size()) {
 				fclose(f);
@@ -326,7 +329,6 @@ public:
 			}
 		}
 	}
-	
 
 
 private:
@@ -339,9 +341,19 @@ private:
 	void mark(int type,int r,int c)
 	{
 		int p = r * water_size + c;
-		if(type == river_mark  && watermap[p] != land_mark)
-			return;
-		watermap[p] = type;
+        int preal = p / 4;
+        int off = (p % 4) * 2;
+        unsigned char current = watermap[preal];
+
+        if(type == river_mark) {
+            int value = (current >> off) & 0x3;
+	    	if(value != land_mark)
+    			return;
+        }
+
+        current &= ~(3u << off);
+        current |=  (type << off);
+		watermap[preal] = current;
 	}
 
 	void draw_point(point p,int width)
