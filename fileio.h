@@ -28,12 +28,13 @@
 #include <stdexcept>
 #include <string>
 
-class io_stream {
-    io_stream(io_stream const &);
-    void operator=(io_stream const &);
+class fileio {
+    fileio(fileio const &);
+    void operator=(fileio const &);
 public:
-    io_stream(std::string file,bool throw_on_error = true) : f_(0), gzf_(0)
+    void open(std::string file,bool throw_on_error = true)
     {
+        close();
         std::string gzfile = file + ".gz";
         gzf_ = gzopen(gzfile.c_str(),"rb");
         if(!gzf_) {
@@ -42,6 +43,13 @@ public:
         if(throw_on_error && !gzf_ && !f_) {
             throw std::runtime_error("Failed to open neither " + gzfile + " nor " + file);
         }
+    }
+    fileio() : f_(0), gzf_(0)
+    {
+    }
+    fileio(std::string file,bool throw_on_error = true) : f_(0), gzf_(0)
+    {
+        open(file,throw_on_error);
     }
     void close()
     {
@@ -54,7 +62,7 @@ public:
             gzf_ = 0;
         }
     }
-    ~io_stream()
+    ~fileio()
     {
         close();
     }
@@ -70,7 +78,7 @@ public:
             return true;
         }
         if(gzf_) {
-            int r = gzread(gzf_,buf,n);
+            int r = gzread(gzf_,ptr,n);
             if(r<=0)
                 return false;
             if(size_t(r) != n)

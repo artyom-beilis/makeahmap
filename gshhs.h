@@ -23,6 +23,7 @@
 #pragma once 
 
 #include "bmp.h"
+#include "fileio.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -408,31 +409,27 @@ private:
 	
 	void open(std::string file_name)
 	{
-		f=fopen(file_name.c_str(),"rb");
-		if(!f) {
-			throw std::runtime_error("Failed to open file " + file_name);
-		}
+		f.open(file_name);
 	}
 	void close()
 	{
-		if(f) { fclose(f); };
-		f=0;
+        f.close();
 	}
 
 	bool get()
 	{
 		for(;;) {
-			if(fread(&hdr,sizeof(hdr),1,f)==0)
+			if(!f.read(&hdr,sizeof(hdr)))
 				return false;
 			hdr.endian();
 			points = hdr.n;
 			greenwich = (hdr.flag >> 16) & 1;
 			if(points <= 2 || hdr.west > lon2 || hdr.east < lon1 || hdr.north < lat1 || hdr.south > lat2) {
-				fseek(f,points * sizeof(point),SEEK_CUR);
+                f.skip(points * sizeof(point));
 				continue;
 			}
 			poly.resize(points);
-			if(fread(&poly[0],sizeof(point),points,f)!=size_t(points)) {
+			if(!f.read(&poly[0],sizeof(point)*points)) {
 				throw std::runtime_error("Failed to read file - unexpected EOF");
 			}
 			for(int i=0;i<points;i++) {
@@ -466,7 +463,7 @@ private:
 	std::vector<point> poly;
 	GSHHS hdr;
 
-	FILE *f;
+	fileio f;
 };
 
 

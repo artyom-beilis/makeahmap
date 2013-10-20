@@ -267,7 +267,7 @@ void load_profile(std::istream &in)
         if(lat_c == -1000 || lon_c == -1000 || scale == -1) {
             throw std::runtime_error("The latitude, longitude or scane are not fully defined");
         }
-        double nmiles = map_size * 1.60934 / 1.852;
+        double nmiles = scale * map_size * 1.60934 / 1.852;
         lat1=lat_c - (nmiles / 2 / 60 );
         lat2=lat_c + (nmiles / 2 / 60 );
         double diff = (nmiles / 2 / 60 ) / cos(lat_c / 180 * 3.14159);
@@ -301,19 +301,6 @@ TIFF *init_image()
     return in;
 }
 
-FILE *init_file(std::string const &name,char const *type,int w=0,int h=0)
-{
-    FILE *f=fopen(name.c_str(),"wb");
-    if(!f) {
-        throw std::runtime_error("Failed to open "+name);
-    }
-    if(w==0)
-        w=r1-r0+1;
-    if(h==0)
-        h=c1-c0+1;
-    fprintf(f,"%s\n%d %d\n255\n",type,h,w);
-    return f;
-}
 
 int row_from_lat(double lat)
 {
@@ -478,7 +465,7 @@ void read_elevations()
                     labs(f) 
                 );
                 std::cout << "Loading " << name << "... " << std::flush;
-                FILE *fin = fopen((dem_prefix+"/" + name + ".hgt").c_str(),"rb");
+                fileio fin(dem_prefix + "/" + name + ".hgt",false);
                 if(!fin) {
                     std::cout << "missing, water?" << std::endl;
                     for(int j=0;j<file_size+1;j++) {
@@ -490,8 +477,7 @@ void read_elevations()
                 }
 
                 for(int j=0;j<file_size+1;j++) {
-                    if(fread(&data[j][pos],2,file_size+1,fin)!=size_t(file_size+1)) {
-                        fclose(fin);
+                    if(!fin.read(&data[j][pos],2*(file_size+1))) {
                         throw std::runtime_error("Failed to read file - unexpected eof" + std::string(name));
                     }
                     for(int k=0;k<file_size+1;k++) {
@@ -501,7 +487,7 @@ void read_elevations()
                         data.at(j).at(pos+k)=b;
                     }
                 }
-                fclose(fin);
+                fin.close();
                 std::cout << "ok" << std::endl;
                 
             }
@@ -695,6 +681,10 @@ void update_gndtype(water_generator &gen)
             }
         }
     }
+}
+
+void load_globcover_data()
+{
 }
 
 int main(int argc,char **argv)
