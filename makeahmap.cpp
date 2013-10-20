@@ -40,7 +40,7 @@
 std::vector<std::vector<uint16_t> > elevations;
 
 int map_size = 512;
-int river_width = 0;
+int river_width = 1;
 
 std::vector<std::vector<unsigned char> > bare_types;
 std::vector<std::vector<unsigned char> > types;
@@ -56,7 +56,7 @@ double lon1 = -1000,lon2 = -1000;
 
 std::string map_name = "map";
 std::string tiff_file="./data/globcover/GLOBCOVER_L4_200901_200912_V2.3.tif";
-std::string dem_prefix = "./data/gtopo30";
+std::string dem_prefix = "./data/srtm";
 std::string shores = "./data/gshhs/gshhs_f.b";
 std::string rivers = "./data/gshhs/wdb_rivers_f.b";
 std::string output_dir = "./output";
@@ -282,6 +282,7 @@ void load_profile(std::istream &in)
 
 TIFF *init_image()
 {
+    TIFFSetWarningHandler(0);
     TIFF *in = TIFFOpen(tiff_file.c_str(),"r");
     if(!in) 
         throw std::runtime_error("Failed to open file " + tiff_file);
@@ -656,6 +657,45 @@ void make_waterd()
     }
 }
 
+void update_gndtype(water_generator &gen)
+{
+    int gnd_size = map_size * 8;
+    std::cerr << gnd_size << " " << types.size() << std::endl;
+    for(int r=0;r<gnd_size;r++) {
+        for(int c=0;c<gnd_size;c++) {
+            bool has_water = false;
+            bool has_land = false;
+            bool has_sea_or_lake = false;
+            for(int dr = 0;dr<4;dr++) {
+                for(int dc=0;dc<4;dc++) {
+                    int v;
+                    int water_r = r*4+dr;
+                    int water_c = c*4+dc;
+                    v = gen.pixel(water_r,water_c);
+                    if(v == water_generator::land_mark)
+                        has_land=true;
+                    else {
+                        has_water=true;
+                        if(v==water_generator::sea_mark || v==water_generator::lake_mark)
+                            has_sea_or_lake = true;
+                    }
+                }
+            }
+            int current_type = types[r][c];
+            if(has_land && has_water) {
+                    if(has_sea_or_lake || current_type == 0)
+                        types[r][c] = beach_type;
+                       
+            }
+            else if(has_land && current_type == 0) {
+                types[r][c] = beach_type;
+            }
+            else if(has_water && current_type != 0) {
+                types[r][c] = 0;
+            }
+        }
+    }
+}
 
 int main(int argc,char **argv)
 {
@@ -701,7 +741,7 @@ int main(int argc,char **argv)
         gen.load_rivers(rivers,river_width);
         gen.save_water_map(output_dir + "/waterd.bmp",true);
         gen.save_water_map(output_dir + "/waterc.bmp",false);
-
+        update_gndtype(gen);
         // make_beaches();
         write_gndtype();
         read_elevations();

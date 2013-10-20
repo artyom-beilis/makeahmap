@@ -116,7 +116,17 @@ public:
 	static const int land_mark = 1;
 	static const int lake_mark = 2;
 	static const int river_mark = 3;
-
+    
+    int pixel(int r,int c)
+    {
+        r=(water_size - 1) - r ;
+        int pos = r * water_size + c;
+        int rpos = pos / 4;
+        int shift = (pos % 4) * 2;
+        int mark = (watermap.at(rpos) >> shift) & 0x3;
+        return mark;
+    }
+    
 	bool mark_lake_river_as_river;
 
 	int water_size;
@@ -218,7 +228,7 @@ public:
 		close();
 	}
 
-	void save_water_map(std::string out,bool is_waterd = true)
+	void save_water_map(std::string out,bool /*is_waterd */= true)
 	{
 		bmp::header hdr(water_size,water_size);
 		FILE *f=fopen(out.c_str(),"wb");
@@ -232,18 +242,10 @@ public:
 		for(int r=0;r<water_size;r++) {
 			for(int c=0;c<water_size;c++,pos++)  {
                 int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
-                if(is_waterd) {
-                    if(type != land_mark)
-        				data[c]=0;
-                    else
-                        data[c]=255;
-                }
-                else {
-                    if(type != land_mark)
-        				data[c]=255;
-                    else
-                        data[c]=0;
-                }
+                if(type != land_mark)
+                    data[c]=0;
+                else
+                    data[c]=255;
 			}
 			if(fwrite(&data[0],1,data.size(),f)!=data.size()) {
 				fclose(f);

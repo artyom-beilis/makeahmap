@@ -28,7 +28,7 @@
 #pragma pack(push,1)
 namespace bmp {
     struct rgbq {
-        unsigned char r,g,b,res;
+        unsigned char b,g,r,res;
     };
     struct info_header {
         uint32_t size;
