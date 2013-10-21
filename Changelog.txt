@@ -9,6 +9,7 @@ New features:
 - Added support of SRTM30/GTOPO30 elevaion database (that is much smaller but yet accurate enough for most purposes)
 - Added selection of river levels to draw
 - Added suppport of gz compression of GSHHS and DEM files such that DEM/hgt and gshhs files can be gz-compressed
+- Added custom globcover to AH tiles support
 
 
 2013-10-19:  Version 0.1

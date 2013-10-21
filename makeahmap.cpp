@@ -60,6 +60,7 @@ std::string map_name = "map";
 std::string tiff_file="./data/globcover/GLOBCOVER_L4_200901_200912_V2.3.tif";
 std::string shores = "./data/gshhs/gshhs_f.b";
 std::string rivers = "./data/gshhs/wdb_rivers_f.b";
+std::string custom_mapping;
 std::string output_dir = "./output";
 char const *real_file=0;
 char const *color_file=0;
@@ -152,6 +153,34 @@ void prepare_map()
     }
 }
 
+void load_custom_type_mapping()
+{
+    prepare_map();
+    if(custom_mapping.empty())
+        return;
+    std::cout <<"- Loading custom ground type mapping" << std::endl;
+    std::ifstream csv(custom_mapping.c_str());
+    if(!csv) {
+        throw std::runtime_error("Failed to open file " + custom_mapping);
+    }
+    std::string line;
+    int lineno=0;
+    while(std::getline(csv,line)) {
+        lineno++;
+        std::istringstream ss(line);
+        ss.unsetf(std::ios_base::basefield);
+        unsigned gcover=0,ah=0;
+        char c;
+
+        ss >> gcover >> c >> ah;
+        if(!ss || c!=',' || gcover >=256 || ah >= 256) {
+            std::ostringstream tmp;
+            tmp << "Invalid line " << lineno << " in file " << custom_mapping;
+            throw std::runtime_error(tmp.str());
+        }
+        map_type[gcover]=ah;
+    }
+}
 
 void load_profile(std::istream &in)
 {
@@ -193,6 +222,9 @@ void load_profile(std::istream &in)
             default:
                 throw std::runtime_error("Invalid map size " + value);
             }
+        }
+        else if(key=="type_mapping") {
+            custom_mapping = value;
         }
         else if(key=="dem") {
             if(value == "srtm3") {
@@ -488,7 +520,6 @@ int col_from_lon(double lon,int width)
 
 void load_globcover_data()
 {
-    prepare_map();
     TIFFSetWarningHandler(0);
     TIFF *in = TIFFOpen(tiff_file.c_str(),"r");
     if(!in) 
@@ -544,11 +575,14 @@ int main(int argc,char **argv)
         }
         load_profile(cfg);
         cfg.close();
+
        
         std::cout << "- Latitude and longitude range " << std::endl;
         std::cout << std::setprecision(3) << std::fixed;
         std::cout << "    Lat: " << std::setw(10) << lat1 << ' ' << std::setw(10) << lat2 << std::endl;
         std::cout << "    Lon: " << std::setw(10) << lon1 << ' ' << std::setw(10) << lon2 << std::endl;
+
+        load_custom_type_mapping();
 
         std::cout << "- Loading GlobCover Data... " << std::flush;
         load_globcover_data();
