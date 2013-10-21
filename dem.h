@@ -162,7 +162,7 @@ namespace dem {
             std::string file_name = get_name(file_id); 
             f_.open(file_name,!d->may_be_missing);
             if(!f_) {
-                std::cerr << "\nFile " <<  file_name << " ... water?" << std::endl;
+                std::cout << "   file " <<  file_name << " missing... is it water area?" << std::endl;
             }
             current_pos_ = 0;
         }

@@ -581,10 +581,10 @@ int main(int argc,char **argv)
         write_gndtype();
         std::cout << "Done" << std::endl;
 
-        std::cout << "- Loading elevations data... " << std::flush;
+        std::cout << "- Loading Digital Elevations Model data... " << std::endl;
         std::vector<std::vector<uint16_t> > tmp=dem::read(db_type,map_size*2,lat1,lat2,lon1,lon2);
         elevations.swap(tmp);
-        std::cout << "Done" << std::endl;
+        std::cout << "  DEM is ready" << std::endl;
         
         std::cout << "- Saving elevation data .elv and .bmp... " << std::flush;
         unsigned max_alt = write_alt_map();

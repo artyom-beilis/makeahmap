@@ -1,8 +1,14 @@
 
+Bug fixes:
+
 - Fixed problems of shores generation in Western Hemisphere
-- Fixed bug of not using scale parameter
-- Added support of SRTM30/GTOPO30
-- Added suppport of gz compression of GSHHS and DEM files
+- Fixed bug of the scale parameter not being used.
+
+New features:
+
+- Added support of SRTM30/GTOPO30 elevaion database (that is much smaller but yet accurate enough for most purposes)
+- Added selection of river levels to draw
+- Added suppport of gz compression of GSHHS and DEM files such that DEM/hgt and gshhs files can be gz-compressed
 
 
 2013-10-19:  Version 0.1
