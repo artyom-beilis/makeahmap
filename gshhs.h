@@ -124,7 +124,7 @@ public:
         int pos = r * water_size + c;
         int rpos = pos / 4;
         int shift = (pos % 4) * 2;
-        int mark = (watermap.at(rpos) >> shift) & 0x3;
+        int mark = (watermap[rpos] >> shift) & 0x3;
         return mark;
     }
     
@@ -228,8 +228,45 @@ public:
 		}
 		close();
 	}
+	
+    void save_waterc_map(std::string out,int lake_color,int river_color)
+	{
+		bmp::header hdr(water_size,water_size);
+		FILE *f=fopen(out.c_str(),"wb");
+		if(!f) 
+			throw std::runtime_error("Failed to open " + out);
 
-	void save_water_map(std::string out,bool /*is_waterd */= true)
+		fwrite(&hdr,1,sizeof(hdr),f);
+		std::vector<unsigned char> data(water_size);
+
+		int pos = 0;
+		for(int r=0;r<water_size;r++) {
+			for(int c=0;c<water_size;c++,pos++)  {
+                int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
+                unsigned char color;
+                switch(type) {
+                case river_mark:
+                    color = river_color;
+                    break;
+                case lake_mark:
+                    color = lake_color;
+                    break;
+                default:
+                    color = 0;
+                }
+                
+                data[c]=color;
+			}
+			if(fwrite(&data[0],1,data.size(),f)!=data.size()) {
+				fclose(f);
+				throw std::runtime_error("Failed to write to " + out);
+			}
+		}
+		if(fclose(f)!=0) 
+			throw std::runtime_error("Failed to close " + out);
+	}
+
+	void save_waterd_map(std::string out)
 	{
 		bmp::header hdr(water_size,water_size);
 		FILE *f=fopen(out.c_str(),"wb");

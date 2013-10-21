@@ -45,6 +45,8 @@ std::vector<std::vector<uint16_t> > elevations;
 int map_size = 512;
 int river_width = 1;
 int river_level = -1;
+int lake_water_color = 0;
+int river_water_color = 0;
 
 dem::db_properties db_type;
 
@@ -259,6 +261,12 @@ void load_profile(std::istream &in)
         else if(key == "river_level") {
             river_level = atoi(value.c_str());
         }
+        else if(key == "river_water_color") {
+            river_water_color = atoi(value.c_str());
+        }
+        else if(key == "lake_water_color") {
+            lake_water_color = atoi(value.c_str());
+        }
         else if(key == "globcover_tiff_path") {
             tiff_file = value;
         }
@@ -304,6 +312,9 @@ void load_profile(std::istream &in)
                 lon_c = v;
                 via_scale = true;
             }
+        }
+        else {
+            throw std::runtime_error("Unknown key " + key);
         }
     }
     if(via_scale == via_coord) {
@@ -587,8 +598,6 @@ int main(int argc,char **argv)
         std::cout << "- Loading GlobCover Data... " << std::flush;
         load_globcover_data();
         resample_type();
-        write_reference_bmp();
-        recolor();
         std::cout << "Done" << std::endl;
         
         water_generator gen(lat1,lat2,lon1,lon2,map_size * 32);
@@ -599,13 +608,16 @@ int main(int argc,char **argv)
         gen.load_rivers(rivers,river_width,river_level);
         std::cout << "Done" << std::endl;
         std::cout << "- Generating waterd.bmp... " << std::flush;
-        gen.save_water_map(output_dir + "/waterd.bmp",true);
-        std::cout << "Done" << std::endl;
-        std::cout << "- Generating waterc.bmp... " << std::flush;
-        gen.save_water_map(output_dir + "/waterc.bmp",false);
+        gen.save_waterd_map(output_dir + "/waterd.bmp");
         std::cout << "Done" << std::endl;
         
+        std::cout << "- Generating waterc.bmp... " << std::flush;
+        gen.save_waterc_map(output_dir + "/waterc.bmp",lake_water_color,river_water_color);
+        std::cout << "Done" << std::endl;
+
         std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;
+        write_reference_bmp();
+        recolor();
         update_gndtype(gen);
         std::cout << "Done" << std::endl;
         
