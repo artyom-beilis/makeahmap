@@ -32,10 +32,19 @@ class fileio {
     fileio(fileio const &);
     void operator=(fileio const &);
 public:
-    void open(std::string file,bool throw_on_error = true)
+    void open(std::string fin,bool throw_on_error = true)
     {
         close();
-        std::string gzfile = file + ".gz";
+        std::string gzfile;
+        std::string file;
+        if(fin.size() > 3 && fin.substr(fin.size()-3) == ".gz") {
+            file = fin.substr(0,fin.size()-3);
+            gzfile = fin;
+        }
+        else {
+            gzfile = fin + ".gz";
+            file = fin;
+        }
         gzf_ = gzopen(gzfile.c_str(),"rb");
         if(!gzf_) {
             f_ = fopen(file.c_str(),"rb");
@@ -90,9 +99,14 @@ public:
     void skip(size_t n)
     {
         if(f_)
-            fseek(f_,n,SEEK_CUR);
-        if(gzf_)
-            gzseek(gzf_,n,SEEK_CUR);
+            if(fseek(f_,n,SEEK_CUR) < 0) {
+                throw std::runtime_error("Internal error fseek failed\n");
+            }
+        if(gzf_) {
+            if(gzseek(gzf_,n,SEEK_CUR) < 0) {
+                throw std::runtime_error("Internal error gzseek failed\n");
+            }
+        }
     }
 private:
     FILE *f_;

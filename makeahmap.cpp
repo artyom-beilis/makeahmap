@@ -33,30 +33,31 @@
 #include <string.h>
 #include <stdexcept>
 #include <math.h>
+#include <iomanip>
 #include "bmp.h"
 #include "gshhs.h"
+
+#include "dem.h"
 
 
 std::vector<std::vector<uint16_t> > elevations;
 
 int map_size = 512;
 int river_width = 1;
+int river_level = -1;
+
+dem::db_properties db_type;
 
 std::vector<std::vector<unsigned char> > bare_types;
 std::vector<std::vector<unsigned char> > types;
 
 static const int lower_lat = -65;
 
-int width;
-int height;
-int r0,r1;
-int c0,c1;
 double lat1 = -1000,lat2 = -1000;
 double lon1 = -1000,lon2 = -1000;
 
 std::string map_name = "map";
 std::string tiff_file="./data/globcover/GLOBCOVER_L4_200901_200912_V2.3.tif";
-std::string dem_prefix = "./data/srtm";
 std::string shores = "./data/gshhs/gshhs_f.b";
 std::string rivers = "./data/gshhs/wdb_rivers_f.b";
 std::string output_dir = "./output";
@@ -154,6 +155,7 @@ void prepare_map()
 
 void load_profile(std::istream &in)
 {
+    std::string dem_prefix;
     bool via_scale = false;
     bool via_coord = false;
     double scale = -1;
@@ -192,6 +194,20 @@ void load_profile(std::istream &in)
                 throw std::runtime_error("Invalid map size " + value);
             }
         }
+        else if(key=="dem") {
+            if(value == "srtm3") {
+                db_type = dem::srtm3();
+            }
+            else if(value == "srtm30") {
+                db_type = dem::srtm30();
+            }
+            else if(value=="gtopo30") {
+                db_type = dem::gtopo30();
+            }
+            else {
+                throw std::runtime_error("Invalid database type name " + value + " valid are srtm3, srtm30 or gtopo30");
+            }
+        }
         else if(key == "scale") {
             via_scale = true;
             scale = atof(value.c_str());
@@ -207,6 +223,9 @@ void load_profile(std::istream &in)
         }
         else if(key == "river_width") {
             river_width = atoi(value.c_str());
+        }
+        else if(key == "river_level") {
+            river_level = atoi(value.c_str());
         }
         else if(key == "globcover_tiff_path") {
             tiff_file = value;
@@ -273,55 +292,17 @@ void load_profile(std::istream &in)
         double diff = (nmiles / 2 / 60 ) / cos(lat_c / 180 * 3.14159);
         lon1=lon_c + diff;
         lon2=lon_c - diff;
-        std::cout << lat1 << ' ' << lat2 << std::endl;
-        std::cout << lon1 << ' ' << lon2 << std::endl;
+    }
+    if(db_type.rows == 0) {
+        throw std::runtime_error("Undefined dem - should be one of srtm30, srtm3, gtopo30");
+    }
+    if(!dem_prefix.empty()) {
+        db_type.directory = dem_prefix;
     }
 }
 
 
 
-TIFF *init_image()
-{
-    TIFFSetWarningHandler(0);
-    TIFF *in = TIFFOpen(tiff_file.c_str(),"r");
-    if(!in) 
-        throw std::runtime_error("Failed to open file " + tiff_file);
-    uint32 imw,imh;
-    TIFFGetField(in, TIFFTAG_IMAGELENGTH, &imh);
-    TIFFGetField(in, TIFFTAG_IMAGEWIDTH, &imw);
-    size_t len = TIFFScanlineSize(in);
-    if(len < imw) {
-        TIFFClose(in);
-        std::ostringstream ss;
-        ss << "Internal error line length = " << len << " < im-width" << imw;
-        throw std::runtime_error(ss.str());
-    }
-    width = imw;
-    height = imh;
-    return in;
-}
-
-
-int row_from_lat(double lat)
-{
-    return int((90 - lat)/(90 - lower_lat) * height);
-}
-
-int col_from_lon(double lon)
-{
-    return int((lon + 180) / 360 * width);
-}
-void calc_rows()
-{
-    r0=row_from_lat(lat1);
-    r1=row_from_lat(lat2);
-    if(r1 < r0)
-        std::swap(r1,r0);
-    c0=col_from_lon(lon1);
-    c1=col_from_lon(lon2);
-    if(c1 < c0)
-        std::swap(c1,c0);
-}
 
 void resample_type()
 {
@@ -385,24 +366,6 @@ void recolor()
     }
 }
 
-void make_beaches()
-{
-    int bmp_size = map_size * 8;
-    // make beaches... where possible
-    for(int r=1;r<bmp_size-1;r++) {
-        for(int c=r;c<bmp_size-1;c++) {
-            if(types[r][c]==0) { // water
-                for(int dr=-1;dr<=1;dr++) {
-                    for(int dc=-1;dc<=1;dc++) {
-                        if(types[r+dr][c+dc]!=0) // is not water
-                            types[r+dr][c+dc]=beach_type;
-                    }
-                }
-            }
-        }
-    }
-}
-
 void write_gndtype()
 {
     std::string fname = output_dir + "/gndtype.bmp";
@@ -424,94 +387,7 @@ void write_gndtype()
         throw std::runtime_error("Failed to close " + fname);
 }
 
-void read_elevations()
-{
-    double lat_start  = lat1;
-    double lat_end = lat2;
-    double lon_start = lon1;
-    double lon_end = lon2;
-    if(lat_start < lat_end)
-        std::swap(lat_start,lat_end);
-    if(lon_start > lon_end)
-        std::swap(lon_start,lon_end);
-    
-    int matrix_size = map_size * 2;
-    
-    elevations.resize(matrix_size,std::vector<uint16_t>(matrix_size,0));
-
-    double dlat = (lat_end - lat_start) / matrix_size;
-    double dlon = (lon_end - lon_start) / matrix_size;
-
-    int f_start = int(floor(lon_start));
-    int f_end =   int(floor(lon_end));
-    int n_files = f_end - f_start + 1;
-    static const int file_size = 1200;
-    std::vector<std::vector<int16_t> > data(file_size + 1,std::vector<int16_t>(file_size * n_files + 1,0));
-
-    int prev_lat_indx = 0;
-    for(int r=0;r<matrix_size;r++) {
-        double dr = r * dlat + lat_start;
-        int req_lat_indx = int(floor(dr));
-        double ddr = dr - req_lat_indx;
-        if(r == 0 || prev_lat_indx != req_lat_indx) {
-            prev_lat_indx = req_lat_indx;
-            int pos = 0;
-            for(int f=f_start;f<=f_end;f++,pos+=file_size) {
-                char name[32];
-                snprintf(name,sizeof(name),"%c%02ld%c%03ld",
-                    ( req_lat_indx >= 0 ? 'N' : 'S' ),
-                    labs(req_lat_indx),
-                    ( f >= 0 ? 'E' : 'W' ),
-                    labs(f) 
-                );
-                std::cout << "Loading " << name << "... " << std::flush;
-                fileio fin(dem_prefix + "/" + name + ".hgt",false);
-                if(!fin) {
-                    std::cout << "missing, water?" << std::endl;
-                    for(int j=0;j<file_size+1;j++) {
-                        for(int k=0;k<file_size+1;k++) {
-                            data[j][pos+k] = 0;
-                        }
-                    }
-                    continue;
-                }
-
-                for(int j=0;j<file_size+1;j++) {
-                    if(!fin.read(&data[j][pos],2*(file_size+1))) {
-                        throw std::runtime_error("Failed to read file - unexpected eof" + std::string(name));
-                    }
-                    for(int k=0;k<file_size+1;k++) {
-                        // little endian
-                        uint16_t a = data.at(j).at(pos+k);
-                        uint16_t b = ((a >> 8) & 0xFF) | ((a << 8) & 0xFF00);
-                        data.at(j).at(pos+k)=b;
-                    }
-                }
-                fin.close();
-                std::cout << "ok" << std::endl;
-                
-            }
-        }
-        for(int c=0;c<matrix_size;c++) {
-            double dc = lon_start + c * dlon;
-            int req_lon_indx = int(floor(dc));
-            double ddc = dc - req_lon_indx;
-            int cpos = (req_lon_indx - f_start) * file_size + int(round(ddc * file_size));
-            int rpos = int(round((1.0-ddr) * file_size));
-            
-            int val = 0;
-            val = data.at(rpos).at(cpos);
-            if(val < 0)
-                val = 0;
-            double feet = val * 3.28084; //feet in meter
-            uint16_t value = int(round(feet));
-            elevations.at(r).at(c)=value;
-        }
-    }
-
-}
-
-void write_alt_map()
+unsigned write_alt_map()
 {
     unsigned max = 0;
     int matrix_size = elevations.size();
@@ -524,7 +400,6 @@ void write_alt_map()
     if(max == 0) {
         throw std::runtime_error("Maximal elevation is 0");
     }
-    std::cout << "Maximal elevation is " << max << " feet" << std::endl;
     std::string elev_file = output_dir + "/" + map_name + "_elevations.bmp";
     FILE *f=fopen(elev_file.c_str(),"wb");
     if(!f) {
@@ -558,95 +433,13 @@ void write_alt_map()
     if(fclose(f)!=0) {
         throw std::runtime_error("Failed to close " + elev_file);
     }
-
+    return max;
 }
 
-
-void make_waterd()
-{
-    std::string fdname = output_dir + "/waterd.bmp";
-    FILE *fd=fopen(fdname.c_str(),"wb");
-    if(!fd) {
-        throw std::runtime_error("Failed to open " + fdname);
-    }
-    std::string fcname = output_dir + "/waterc.bmp";
-    FILE *fc=fopen(fcname.c_str(),"wb");
-    if(!fc) {
-        throw std::runtime_error("Failed to open " + fcname);
-    }
-    int water_size = map_size * 32;
-    bmp::header hdr(water_size,water_size);
-    fwrite(&hdr,sizeof(hdr),1,fd);
-    fwrite(&hdr,sizeof(hdr),1,fc);
-
-    std::vector<unsigned char> waterd(water_size,0);
-    std::vector<unsigned char> waterc(water_size,0);
-    
-    int bh = bare_types.size();
-    int bw = bare_types[0].size();
-    int elev_size = map_size * 2;
-
-    double r_factor = double(bh) / water_size;
-    double c_factor = double(bw) / water_size;
-
-    for(int r=water_size-1;r>=0;r--) {
-        for(int c=0;c<water_size;c++) {
-            double real_r = r*r_factor;
-            double real_c = c*c_factor;
-            int r0 = int(floor(real_r));
-            int c0 = int(floor(real_c));
-            double r0_w = 1.0 - (real_r - r0);
-            double c0_w = 1.0 - (real_c - c0);
-            double r1_w = 1.0 - r0_w;
-            double c1_w = 1.0 - c0_w;
-            int r1 = r0+1;
-            int c1 = c0+1;
-            if(r1 >=bh) r1=bh-1;
-            if(c1 >=bw) c1=bw-1;
-            double weight = 
-                  c0_w * (is_water(bare_types[r0][c0]) * r0_w + is_water(bare_types[r1][c0]) * r1_w)
-                + c1_w * (is_water(bare_types[r0][c1]) * r0_w + is_water(bare_types[r1][c1]) * r1_w);
-            bool water_detected = weight >= 0.5;
-            if(!water_detected) {
-                waterd[c]=255;
-                waterc[c]=0;
-            }
-            else {
-                waterd[c]=0;
-                waterc[c] = int(floor((1.0 - weight)*2 * 255));
-                int elev_r = r / 16;
-                int elev_c = c / 16;
-                if(elevations[elev_r][elev_c] <= 300) {
-                    // do now lower high altitude lakes
-                    for(int ter=elev_r-1;ter<=elev_r+1;ter++) {
-                        for(int tec=elev_c-1;tec<=elev_c+1;tec++) {
-                            if(ter < 0 || ter >= elev_size || tec<0 || tec >= elev_size) 
-                                continue;
-                            elevations[ter][tec]=0;
-                        }
-                    }
-                }
-            }
-        }
-        if(fwrite(&waterd[0],1,water_size,fd)!=size_t(water_size)) {
-            throw std::runtime_error("Failed to write to " + fdname);
-        }
-        if(fwrite(&waterc[0],1,water_size,fc)!=size_t(water_size)) {
-            throw std::runtime_error("Failed to write to " + fcname);
-        }
-    }
-    if(fclose(fd)!=0) {
-        throw std::runtime_error("Failed to close " + fdname);
-    }
-    if(fclose(fc)!=0) {
-        throw std::runtime_error("Failed to close " + fcname);
-    }
-}
 
 void update_gndtype(water_generator &gen)
 {
     int gnd_size = map_size * 8;
-    std::cerr << gnd_size << " " << types.size() << std::endl;
     for(int r=0;r<gnd_size;r++) {
         for(int c=0;c<gnd_size;c++) {
             bool has_water = false;
@@ -683,8 +476,59 @@ void update_gndtype(water_generator &gen)
     }
 }
 
+int row_from_lat(double lat,int height)
+{
+    return int((90 - lat)/(90 - lower_lat) * height);
+}
+
+int col_from_lon(double lon,int width)
+{
+    return int((lon + 180) / 360 * width);
+}
+
 void load_globcover_data()
 {
+    prepare_map();
+    TIFFSetWarningHandler(0);
+    TIFF *in = TIFFOpen(tiff_file.c_str(),"r");
+    if(!in) 
+        throw std::runtime_error("Failed to open file " + tiff_file);
+    uint32 imw,imh;
+    TIFFGetField(in, TIFFTAG_IMAGELENGTH, &imh);
+    TIFFGetField(in, TIFFTAG_IMAGEWIDTH, &imw);
+    size_t len = TIFFScanlineSize(in);
+
+    if(len < imw) {
+        TIFFClose(in);
+        std::ostringstream ss;
+        ss << "Internal error line length = " << len << " < im-width" << imw;
+        throw std::runtime_error(ss.str());
+    }
+    int width = imw;
+    int height = imh;
+
+    int r0=row_from_lat(lat1,height);
+    int r1=row_from_lat(lat2,height);
+    if(r1 < r0)
+        std::swap(r1,r0);
+    int c0=col_from_lon(lon1,width);
+    int c1=col_from_lon(lon2,width);
+    if(c1 < c0)
+        std::swap(c1,c0);
+
+    std::vector<unsigned char> buf(len);        
+
+    int h = r1-r0 + 1;
+    int w = c1-c0 + 1;
+
+    bare_types.resize(h,std::vector<unsigned char>(w,0));
+
+    for(int r=r0,inr=0;r<=r1;r++,inr++) {
+        TIFFReadScanline(in,&buf[0],r);
+        memcpy(&bare_types[inr][0],&buf[c0],w);
+    }
+    TIFFClose(in);
+
 }
 
 int main(int argc,char **argv)
@@ -700,46 +544,61 @@ int main(int argc,char **argv)
         }
         load_profile(cfg);
         cfg.close();
+       
+        std::cout << "- Latitude and longitude range " << std::endl;
+        std::cout << std::setprecision(3) << std::fixed;
+        std::cout << "    Lat: " << std::setw(10) << lat1 << ' ' << std::setw(10) << lat2 << std::endl;
+        std::cout << "    Lon: " << std::setw(10) << lon1 << ' ' << std::setw(10) << lon2 << std::endl;
 
-        TIFF *in = init_image();
-        if(!in)
-            return 1;
-        calc_rows();
-
-        size_t len = TIFFScanlineSize(in);
-        unsigned char *buf=new unsigned char[len];
-
-        prepare_map();
-
-        int h = r1-r0 + 1;
-        int w = c1-c0 + 1;
-
-        bare_types.resize(h,std::vector<unsigned char>(w,0));
-
-        for(int r=r0,inr=0;r<=r1;r++,inr++) {
-            TIFFReadScanline(in,buf,r);
-            memcpy(&bare_types[inr][0],buf+c0,w);
-        }
-        TIFFClose(in);
-
+        std::cout << "- Loading GlobCover Data... " << std::flush;
+        load_globcover_data();
         resample_type();
         write_reference_bmp();
         recolor();
+        std::cout << "Done" << std::endl;
         
         water_generator gen(lat1,lat2,lon1,lon2,map_size * 32);
+        std::cout << "- Loading & processing shores data... " << std::flush;
         gen.load_land(shores);
-        gen.load_rivers(rivers,river_width);
+        std::cout << "Done" << std::endl;
+        std::cout << "- Loading & processing rivers data... " << std::flush;
+        gen.load_rivers(rivers,river_width,river_level);
+        std::cout << "Done" << std::endl;
+        std::cout << "- Generating waterd.bmp... " << std::flush;
         gen.save_water_map(output_dir + "/waterd.bmp",true);
+        std::cout << "Done" << std::endl;
+        std::cout << "- Generating waterc.bmp... " << std::flush;
         gen.save_water_map(output_dir + "/waterc.bmp",false);
+        std::cout << "Done" << std::endl;
+        
+        std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;
         update_gndtype(gen);
+        std::cout << "Done" << std::endl;
+        
         // make_beaches();
+        
+        std::cout << "- Saving ground types: gndtype.bmp... " << std::flush;
         write_gndtype();
-        read_elevations();
-        // make_waterd();
-        write_alt_map();
+        std::cout << "Done" << std::endl;
+
+        std::cout << "- Loading elevations data... " << std::flush;
+        std::vector<std::vector<uint16_t> > tmp=dem::read(db_type,map_size*2,lat1,lat2,lon1,lon2);
+        elevations.swap(tmp);
+        std::cout << "Done" << std::endl;
+        
+        std::cout << "- Saving elevation data .elv and .bmp... " << std::flush;
+        unsigned max_alt = write_alt_map();
+        std::cout << "Done" << std::endl;
+        std::cout << "-- Maximal altitude (for use with TE bmp import) is " << max_alt << " feet" << std::endl;
+
+#if defined(_WIN32) || defined(WIN32)
+        std::cout << "Press Enter to exit..." << std::endl;
+        std::cin.get();
+        return 0;
+#endif
     }
     catch(std::exception const &e) {
-        std::cerr << "Error:" << e.what() << std::endl;
+        std::cerr << "\nError:" << e.what() << std::endl;
         std::cerr << "Press Enter to exit..." << std::endl;
         std::cin.get();
         return 1;

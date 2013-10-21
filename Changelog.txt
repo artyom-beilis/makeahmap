@@ -1,0 +1,15 @@
+
+- Fixed problems of shores generation in Western Hemisphere
+- Fixed bug of not using scale parameter
+- Added support of SRTM30/GTOPO30
+- Added suppport of gz compression of GSHHS and DEM files
+
+
+2013-10-19:  Version 0.1
+
+- Added support of GSHHS database for shores generation
+- It is possible to use central point latitude/logitude + scale to select a region
+
+2013-10-16: Version 0.0
+
+- Initial alpha release

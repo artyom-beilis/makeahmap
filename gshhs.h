@@ -257,10 +257,13 @@ public:
 			throw std::runtime_error("Failed to close " + out);
 	}
 	
-	void load_rivers(std::string file_name,int width)
+	void load_rivers(std::string file_name,int width,int min_level = -1)
 	{
 		open(file_name);
 		while(get()) {
+			int level = (hdr.flag & 255);
+            if(min_level != -1 && level > min_level)
+                    continue;
 			for(int i=0;i<points-1;i++) {
 				point start = poly[i];
 				point end = poly[i+1];
@@ -416,6 +419,19 @@ private:
         f.close();
 	}
 
+    int fix_longitude_sign(int x)
+    {
+        if(x>180*1000*1000)
+        {
+			x -= 360 * 1000 * 1000;
+        }
+        return x;
+    }
+
+    void skip()
+    {
+        f.skip(points * sizeof(point));
+    }
 	bool get()
 	{
 		for(;;) {
@@ -424,10 +440,33 @@ private:
 			hdr.endian();
 			points = hdr.n;
 			greenwich = (hdr.flag >> 16) & 1;
-			if(points <= 2 || hdr.west > lon2 || hdr.east < lon1 || hdr.north < lat1 || hdr.south > lat2) {
-                f.skip(points * sizeof(point));
+            if(hdr.west > hdr.east) { // ignore polygons passing 180E - 180W
+                skip();
 				continue;
-			}
+            }
+            if(points <=2) {
+                skip();
+                continue;
+            }
+			if(hdr.north < lat1 || hdr.south > lat2) {
+                skip();
+                continue;
+            }
+            if(greenwich) {
+                if(hdr.west > lon2 || hdr.east < lon1) {
+                    skip();
+                    continue;   
+                }
+            }
+            else {
+                int west = fix_longitude_sign(hdr.west);
+                int east = fix_longitude_sign(hdr.east);
+                if(west > lon2 || east < lon1) {
+                    skip();
+                    continue;   
+                }
+            }
+
 			poly.resize(points);
 			if(!f.read(&poly[0],sizeof(point)*points)) {
 				throw std::runtime_error("Failed to read file - unexpected EOF");
@@ -435,12 +474,19 @@ private:
 			for(int i=0;i<points;i++) {
 				poly[i].endian();
 			}
-			if(greenwich) {
+    		if(greenwich) {
 				for(int i=0;i<points;i++) {
 					if(poly[i].x > hdr.east)
 						poly[i].x -= 360 * 1000 * 1000;
 				}
 			}
+            else {
+   				for(int i=0;i<points;i++) {
+                    poly[i].x = fix_longitude_sign(poly[i].x);
+				}
+                hdr.west = fix_longitude_sign(hdr.west);
+                hdr.east = fix_longitude_sign(hdr.east);
+            }
 			west_col = int(round(lon_2_col * (hdr.west - lon1)));
 			east_col = int(round(lon_2_col * (hdr.east - lon1)));
 			north_row = int(round(lat_2_row * (hdr.north - lat1)));

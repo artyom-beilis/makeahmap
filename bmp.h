@@ -24,6 +24,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <string.h>
 
 #pragma pack(push,1)
 namespace bmp {
