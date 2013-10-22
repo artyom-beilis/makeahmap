@@ -1,0 +1,1 @@
+g++ -std=c++0x -O3 -g -m32 -DDLL_EXPORT -Wall -Wextra -I E:\AH1-Terrain\code\packages\include makeahmap.cpp  -L E:\AH1-Terrain\code\packages\lib -ltiff -lz -o makeahmap.exe

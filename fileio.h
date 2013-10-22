@@ -103,9 +103,19 @@ public:
                 throw std::runtime_error("Internal error fseek failed\n");
             }
         if(gzf_) {
-            if(gzseek(gzf_,n,SEEK_CUR) < 0) {
-                throw std::runtime_error("Internal error gzseek failed\n");
+            char buf[1024];
+            while(n > 0) {
+                size_t rem = sizeof(buf);
+                if(rem > n)
+                    rem = n;
+                if(!read(buf,rem)) {
+                    throw std::runtime_error("Internal error in gz stream skipping");
+                }
+                n-=rem;
             }
+            /*if(gzseek(gzf_,n,SEEK_CUR) < 0) { fails on Windows WTF?
+                throw std::runtime_error("Internal error gzseek failed\n");
+            }*/
         }
     }
 private:

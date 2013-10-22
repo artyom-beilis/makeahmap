@@ -47,6 +47,7 @@ int river_width = 1;
 int river_level = -1;
 int lake_water_color = 0;
 int river_water_color = 0;
+int land_water_color = 0;
 
 dem::db_properties db_type;
 
@@ -266,6 +267,9 @@ void load_profile(std::istream &in)
         }
         else if(key == "lake_water_color") {
             lake_water_color = atoi(value.c_str());
+        }
+        else if(key == "land_water_color") {
+            land_water_color = atoi(value.c_str());
         }
         else if(key == "globcover_tiff_path") {
             tiff_file = value;
@@ -487,7 +491,6 @@ void update_gndtype(water_generator &gen)
         for(int c=0;c<gnd_size;c++) {
             bool has_water = false;
             bool has_land = false;
-            bool has_sea_or_lake = false;
             for(int dr = 0;dr<4;dr++) {
                 for(int dc=0;dc<4;dc++) {
                     int v;
@@ -496,18 +499,13 @@ void update_gndtype(water_generator &gen)
                     v = gen.pixel(water_r,water_c);
                     if(v == water_generator::land_mark)
                         has_land=true;
-                    else {
+                    else 
                         has_water=true;
-                        if(v==water_generator::sea_mark || v==water_generator::lake_mark)
-                            has_sea_or_lake = true;
-                    }
                 }
             }
             int current_type = types[r][c];
             if(has_land && has_water) {
-                    if(has_sea_or_lake || current_type == 0)
-                        types[r][c] = beach_type;
-                       
+                types[r][c] = beach_type;
             }
             else if(has_land && current_type == 0) {
                 types[r][c] = beach_type;
@@ -573,6 +571,189 @@ void load_globcover_data()
 
 }
 
+void land_border()
+{
+    int border_size = 2;
+    for(int d=0;d<border_size;d++) {
+        int r1=d;
+        int r2=(map_size*2 - 1) - d;
+        for(int c=0;c<map_size * 2;c++) {
+            elevations[r1][c]=0;
+            elevations[r2][c]=0;
+            elevations[c][r1]=0;
+            elevations[c][r2]=0;
+        }
+    }
+}
+
+void fix_sea_elevations(water_generator &gen,int pixels = 33)
+{
+    int max_water = map_size * 32;
+    for(int r=0;r<map_size*2;r++) {
+        for(int c=0;c<map_size*2;c++) {
+            bool has_sea=false;
+            for(int dr = -pixels;dr<=pixels;dr++) {
+                for(int dc=-pixels;dc<pixels;dc++) {
+                    int wr=r*16 + dr;
+                    int wc=c*16 + dc;
+                    if(wr < 0 || wr>= max_water || wc < c || wc >= max_water) {
+                        continue;
+                    }
+                    if(gen.pixel(wr,wc)==water_generator::sea_mark) {
+                        has_sea = true;
+                        goto break_point;
+                    }
+                }
+            }
+        break_point:
+            if(has_sea)
+                elevations[r][c] = 0;
+        }
+    }
+}
+
+void make_map_color_index(bmp::header &hdr)
+{
+    // 200-249 - beach, river bad, rock
+    // 150-199 - grass, grocky grass, sandy grass, swamp
+    // 100-149 - snow
+    //  50- 99 - forest
+    //   0- 49 - farm 
+    int colors[5][3] = {
+        { 192, 192, 192 },
+        { 192, 192, 192 },
+        { 192, 192, 192 },
+        { 192, 192, 192 },
+        { 192, 192, 192 },
+        //{ 90, 206, 59 },
+        //{ 216, 186, 62 },
+        //{ 192, 192, 192 },
+        //{ 74, 255, 150 },
+        //{ 255, 210, 76 }
+    };
+    for(int c=0;c<5;c++) {
+        for(int i=0;i<50;i++) {
+            double f=0.5 + i / 100.0;
+            bmp::rgbq *p = &hdr.ih.colors[c*50 + i ];
+            p->r = int(floor(colors[c][0] * f));
+            p->g = int(floor(colors[c][1] * f));
+            p->b = int(floor(colors[c][2] * f));
+        }
+    }
+    bmp::rgbq *p = &hdr.ih.colors[255];
+    p->r=40;
+    p->g=44;
+    p->b=191;
+}
+
+int get_color_from_type(int type,double emboss)
+{
+    // ntt0000  Deep water ntt0000 will always be deep water  (This is a greyscale BMP designed to vary the water over distances)
+    // ntt0001  Grass
+    // ntt0002  Forest 1 (evergreen)
+    // ntt0003  Forest 2 (deciduous)
+    // ntt0004  Farm 1
+    // ntt0005  Farm 2
+    // ntt0006  Rock
+    // ntt0007  Swamp
+    // ntt0008  Rocky Grass
+    // ntt0009  Sandy Grass
+    // ntt0010 A  Beach
+    // ntt0011 B  River bed /
+    // ntt0012 C  Snow / Coral
+    
+    // 255 - water
+    // 254 - beach
+    // 253 - grid line
+    // 252 - grid text
+    // 251 - TBD
+    // 250 - TBD
+    // 200-249 - beach, river bad, rock
+    // 150-199 - grass, grocky grass, sandy grass, swamp
+    // 100-149 - snow
+    //  50- 99 - forest
+    //   0- 49 - farm 
+    
+    int basic;
+    switch(type & 0xF) {
+    case 4:
+    case 5:
+        basic = 0;
+        break;
+    case 2:
+    case 3:
+        basic = 1;
+        break;
+    case 1:
+    case 7:
+    case 8:
+    case 9:
+        basic = 2;
+        break;
+    case 6:
+    case 10:
+    case 11:
+        basic = 3;
+        break;
+    case 12:
+        basic = 4;
+        break;
+    case 0:
+        return 255;
+    default:
+        throw std::runtime_error("Internal error invalid ground type");
+    }
+    if(emboss < -1.0)
+        emboss = -1.0;
+    else if(emboss > 1.0)
+        emboss = 1.0;
+    int color = int(floor((emboss + 1.0) / 2 * 49)) + 50 * basic;
+    return color;
+}
+
+void make_clipboard_map(int max_elev)
+{
+    int tsize = 1024;
+    bmp::header h(tsize,tsize);
+    make_map_color_index(h);
+    std::string map_file = output_dir +"/" + map_name + ".bmp";
+    FILE *f = fopen(map_file.c_str(),"wb");
+    if(!f) {
+        throw std::runtime_error("Failed to open " + map_file);
+    }
+    fwrite(&h,sizeof(h),1,f);
+    int factor_type = map_size * 8;
+    int factor_elev = map_size * 2;
+    int elev_size = map_size * 2;
+    for(int r=tsize-1;r>=0;r--) {
+        std::vector<unsigned char> colors(tsize);
+        for(int c=0;c<tsize;c++) {
+                int t_r = factor_type * r / tsize;
+                int t_c = factor_type * c / tsize;
+                int type = types.at(t_r).at(t_c);
+                
+                int e_r = factor_elev * r / tsize;
+                int e_c = factor_elev * c / tsize;
+                double e[2] = {0,0};
+                for(int d=-1,p=0;d<=1;d+=2,p++) {
+                    if(e_r + d < 0 || e_r + d >= elev_size || e_c + d < 0 || e_c+d >= elev_size)
+                        continue;
+                    try {
+                        e[p]=double(elevations.at(e_r+d).at(e_c+d))/max_elev;
+                    }
+                    catch(...) {
+                        std::cerr << "Elev " << e_r <<" " << e_c << " " << d << std::endl;
+                        throw;
+                    }
+                }
+                double emboss = (e[1]-e[0]) * 5;
+                colors[c] = get_color_from_type(type,emboss);
+        }
+        fwrite(&colors[0],1,tsize,f);
+    }
+    fclose(f);
+}
+
 int main(int argc,char **argv)
 {
     try {
@@ -604,15 +785,20 @@ int main(int argc,char **argv)
         std::cout << "- Loading & processing shores data... " << std::flush;
         gen.load_land(shores);
         std::cout << "Done" << std::endl;
-        std::cout << "- Loading & processing rivers data... " << std::flush;
-        gen.load_rivers(rivers,river_width,river_level);
-        std::cout << "Done" << std::endl;
+        
+        if(river_level != 0) {
+            std::cout << "- Loading & processing rivers data... " << std::flush;
+            gen.load_rivers(rivers,river_width,river_level);
+            gen.make_border();
+            std::cout << "Done" << std::endl;
+        }
+        
         std::cout << "- Generating waterd.bmp... " << std::flush;
         gen.save_waterd_map(output_dir + "/waterd.bmp");
         std::cout << "Done" << std::endl;
         
         std::cout << "- Generating waterc.bmp... " << std::flush;
-        gen.save_waterc_map(output_dir + "/waterc.bmp",lake_water_color,river_water_color);
+        gen.save_waterc_map(output_dir + "/waterc.bmp",lake_water_color,river_water_color,land_water_color);
         std::cout << "Done" << std::endl;
 
         std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;
@@ -631,11 +817,20 @@ int main(int argc,char **argv)
         std::vector<std::vector<uint16_t> > tmp=dem::read(db_type,map_size*2,lat1,lat2,lon1,lon2);
         elevations.swap(tmp);
         std::cout << "  DEM is ready" << std::endl;
+        std::cout << "- Fixing elevations near sea water... " << std::flush;
+        fix_sea_elevations(gen);
+        std::cout << "Done" << std::endl;
         
         std::cout << "- Saving elevation data .elv and .bmp... " << std::flush;
         unsigned max_alt = write_alt_map();
         std::cout << "Done" << std::endl;
         std::cout << "-- Maximal altitude (for use with TE bmp import) is " << max_alt << " feet" << std::endl;
+        
+        std::cout << "- Generating clibboard map... " << std::flush;
+        make_clipboard_map(max_alt);
+        std::cout << "Done" << std::endl;
+        
+        std::cout << "\n\nCompleted\n";
 
 #if defined(_WIN32) || defined(WIN32)
         std::cout << "Press Enter to exit..." << std::endl;

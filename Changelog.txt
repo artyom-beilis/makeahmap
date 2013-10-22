@@ -1,15 +1,20 @@
+2013-10-22:  Version 0.2
 
 Bug fixes:
 
-- Fixed problems of shores generation in Western Hemisphere
+- Fixed bug of not generating shores in Western Hemisphere
 - Fixed bug of the scale parameter not being used.
+- Fixed elevations near sea-shores - set to 0 to reduce water slope problems
+- Removed rivers near edges of terrain - reduce about of slope issues
+- All rivers now have beaches
 
 New features:
 
 - Added support of SRTM30/GTOPO30 elevaion database (that is much smaller but yet accurate enough for most purposes)
 - Added selection of river levels to draw
 - Added suppport of gz compression of GSHHS and DEM files such that DEM/hgt and gshhs files can be gz-compressed
-- Added custom globcover to AH tiles support
+- Added custom globcover to AH tiles support (groundmapping.csv)
+- Initial clipboardmap generation (not really useful)
 
 
 2013-10-19:  Version 0.1

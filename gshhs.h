@@ -117,15 +117,10 @@ public:
 	static const int land_mark = 1;
 	static const int lake_mark = 2;
 	static const int river_mark = 3;
-    
     int pixel(int r,int c)
     {
         r=(water_size - 1) - r ;
-        int pos = r * water_size + c;
-        int rpos = pos / 4;
-        int shift = (pos % 4) * 2;
-        int mark = (watermap[rpos] >> shift) & 0x3;
-        return mark;
+        return internal_pixel(r,c);
     }
     
 	bool mark_lake_river_as_river;
@@ -229,7 +224,7 @@ public:
 		close();
 	}
 	
-    void save_waterc_map(std::string out,int lake_color,int river_color)
+    void save_waterc_map(std::string out,int lake_color,int river_color,int land_color)
 	{
 		bmp::header hdr(water_size,water_size);
 		FILE *f=fopen(out.c_str(),"wb");
@@ -250,6 +245,9 @@ public:
                     break;
                 case lake_mark:
                     color = lake_color;
+                    break;
+                case land_mark:
+                    color = land_color;
                     break;
                 default:
                     color = 0;
@@ -373,15 +371,50 @@ public:
 		}
 	}
 
-
+    
+    void make_border()
+    {
+        int border_size = 34 * 2;
+        int river_remove_limit = 0;
+        for(int d=0;d<border_size;d++) {
+            int r1=d;
+            int r2=(water_size-1)-d;
+            for(int c=0;c<water_size;c++) {
+                if(d < river_remove_limit) {
+                    mark(sea_mark,r1,c);
+                    mark(sea_mark,r2,c);
+                    mark(sea_mark,c,r1);
+                    mark(sea_mark,c,r2);
+                }
+                else {
+                    to_land_if_river(r1,c);
+                    to_land_if_river(r2,c);
+                    to_land_if_river(c,r1);
+                    to_land_if_river(c,r2);
+                }
+            }
+        }
+    }
+    
 private:
+    int internal_pixel(int r,int c)
+    {
+        int pos = r * water_size + c;
+        int rpos = pos / 4;
+        int shift = (pos % 4) * 2;
+        int mark = (watermap[rpos] >> shift) & 0x3;
+        return mark;
+    }
+    
+    void to_land_if_river(int r,int c)
+    {
+        if(internal_pixel(r,c)==river_mark) {
+            mark(land_mark,r,c);
+            assert(internal_pixel(r,c)==land_mark);
+        }
+    }
 
-	bool between(int x,int min,int max)
-	{
-		return (min<=x && x<=max);
-	}
-
-	void mark(int type,int r,int c)
+  	void mark(int type,int r,int c)
 	{
 		int p = r * water_size + c;
         int preal = p / 4;
@@ -398,6 +431,14 @@ private:
         current |=  (type << off);
 		watermap[preal] = current;
 	}
+
+
+
+	bool between(int x,int min,int max)
+	{
+		return (min<=x && x<=max);
+	}
+
 
 	void draw_point(point p,int width)
 	{
