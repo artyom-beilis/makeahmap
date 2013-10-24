@@ -188,7 +188,7 @@ namespace dem {
         
         elevations.resize(points,std::vector<uint16_t>(points,0));
 
-        int tiles_no = 360 / p.latitude_step;
+        int tiles_no = 360 / p.longitude_step;
         std::vector<std::shared_ptr<tile> > tiles(tiles_no);
         for(int i=0;i<tiles_no;i++)
             tiles[i].reset(new tile(p,i));

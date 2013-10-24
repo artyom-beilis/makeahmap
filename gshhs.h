@@ -36,6 +36,7 @@
 #include <string.h>
 #include <stdexcept>
 #include <math.h>
+#include <functional>
 #include <assert.h>
 
 
@@ -110,6 +111,7 @@ class water_generator {
 			switch_endian(y);
 		}
 	};
+    
 
 public:
 	
@@ -165,7 +167,7 @@ public:
 				value = land_mark;
 			else
 				value = lake_mark;
-
+            
 			if(river && mark_lake_river_as_river)
 				value = river_mark;
 			
@@ -226,15 +228,20 @@ public:
 	
     void save_waterc_map(std::string out,int lake_color,int river_color,int land_color)
 	{
-		bmp::header hdr(water_size,water_size);
+		bmp::header hdr(16384,16384);
+        std::vector<unsigned char> zeros(16384,0);
+        int padding=(16384 - water_size)/2;
 		FILE *f=fopen(out.c_str(),"wb");
 		if(!f) 
 			throw std::runtime_error("Failed to open " + out);
 
 		fwrite(&hdr,1,sizeof(hdr),f);
 		std::vector<unsigned char> data(water_size);
+        
 
 		int pos = 0;
+        for(int i=0;i<padding;i++)
+            safe_write(&zeros[0],16384,f,out);
 		for(int r=0;r<water_size;r++) {
 			for(int c=0;c<water_size;c++,pos++)  {
                 int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
@@ -255,18 +262,21 @@ public:
                 
                 data[c]=color;
 			}
-			if(fwrite(&data[0],1,data.size(),f)!=data.size()) {
-				fclose(f);
-				throw std::runtime_error("Failed to write to " + out);
-			}
+            safe_write(&zeros[0],padding,f,out);
+			safe_write(&data[0],data.size(),f,out);
+            safe_write(&zeros[0],padding,f,out);
 		}
+        for(int i=0;i<padding;i++)
+            safe_write(&zeros[0],16384,f,out);
 		if(fclose(f)!=0) 
 			throw std::runtime_error("Failed to close " + out);
 	}
 
 	void save_waterd_map(std::string out)
 	{
-		bmp::header hdr(water_size,water_size);
+		bmp::header hdr(16384,16384);
+        std::vector<unsigned char> zeros(16384,0);
+        int padding=(16384 - water_size)/2;
 		FILE *f=fopen(out.c_str(),"wb");
 		if(!f) 
 			throw std::runtime_error("Failed to open " + out);
@@ -275,6 +285,8 @@ public:
 		std::vector<unsigned char> data(water_size);
 
 		int pos = 0;
+        for(int i=0;i<padding;i++)
+            safe_write(&zeros[0],16384,f,out);
 		for(int r=0;r<water_size;r++) {
 			for(int c=0;c<water_size;c++,pos++)  {
                 int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
@@ -283,22 +295,52 @@ public:
                 else
                     data[c]=255;
 			}
-			if(fwrite(&data[0],1,data.size(),f)!=data.size()) {
-				fclose(f);
-				throw std::runtime_error("Failed to write to " + out);
-			}
+            safe_write(&zeros[0],padding,f,out);
+			safe_write(&data[0],data.size(),f,out);
+            safe_write(&zeros[0],padding,f,out);
 		}
+        for(int i=0;i<padding;i++)
+            safe_write(&zeros[0],16384,f,out);
 		if(fclose(f)!=0) 
 			throw std::runtime_error("Failed to close " + out);
 	}
-	
-	void load_rivers(std::string file_name,int width,int min_level = -1)
+    
+    typedef std::function<void(int,int,int)> point_callback_type;
+    
+    struct callback_guard {
+        callback_guard(point_callback_type const &cb,water_generator &gen) : 
+            gen_(&gen)
+        {
+            gen_->cb_ = cb;
+        }
+        ~callback_guard()
+        {
+            gen_->cb_ = point_callback_type();
+        }
+        water_generator *gen_;
+    };
+    
+	void load_rivers(std::string file_name,
+                     int width,
+                     int min_level,
+                     double flat_shift,
+                     double flon_shift,
+                     std::set<int> const &black_list=std::set<int>()
+        )
 	{
+        int lat_shift = int(round(flat_shift*1e6));
+        int lon_shift = int(round(flon_shift*1e6));
 		open(file_name);
 		while(get()) {
 			int level = (hdr.flag & 255);
             if(min_level != -1 && level > min_level)
-                    continue;
+                continue;
+            if(black_list.find(hdr.id)!=black_list.end())
+                continue;
+			for(int i=0;i<points;i++) {
+                poly[i].y+=lat_shift;
+                poly[i].x+=lon_shift;
+            }
 			for(int i=0;i<points-1;i++) {
 				point start = poly[i];
 				point end = poly[i+1];
@@ -369,13 +411,14 @@ public:
 
 			}
 		}
+        close();
 	}
 
     
     void make_border()
     {
         int border_size = 34 * 2;
-        int river_remove_limit = 0;
+        int river_remove_limit = 16;
         for(int d=0;d<border_size;d++) {
             int r1=d;
             int r2=(water_size-1)-d;
@@ -397,6 +440,16 @@ public:
     }
     
 private:
+
+    void safe_write(void const *p,size_t n,FILE *f,std::string const &name)
+    {
+        if(fwrite(p,1,n,f)!=n) {
+            throw std::runtime_error("Failed to write to file "+ name);
+        }
+    }
+    
+    point_callback_type cb_;
+
     int internal_pixel(int r,int c)
     {
         int pos = r * water_size + c;
@@ -416,6 +469,10 @@ private:
 
   	void mark(int type,int r,int c)
 	{
+        if(cb_) {
+            cb_(hdr.id,(water_size-1)-r,c);
+            return;
+        }
 		int p = r * water_size + c;
         int preal = p / 4;
         int off = (p % 4) * 2;
@@ -565,6 +622,7 @@ private:
                 hdr.west = fix_longitude_sign(hdr.west);
                 hdr.east = fix_longitude_sign(hdr.east);
             }
+            
 			west_col = int(round(lon_2_col * (hdr.west - lon1)));
 			east_col = int(round(lon_2_col * (hdr.east - lon1)));
 			north_row = int(round(lat_2_row * (hdr.north - lat1)));

@@ -1,3 +1,39 @@
+2013-10-24:  Version 0.4
+
+Bug fixes:
+
+- Fixed incorrect file generation for terrains of size < 512
+- Fixed trees appearing over the water
+
+New features:
+
+- Added an option to shift river position globally in attempt to correct 
+  alignment issues
+
+
+2013-10-23:  Version 0.3
+
+Bug fixes:
+
+- Fixed crash when rendering terrain at far east globe locations
+
+New features:
+
+- Added support of automatic terrain altitude corrections such that:
+
+  (a) The water slopes of rivers are below 120 feet per mile
+  (b) Lake water has same altitude all over the lake
+  (c) Altitude corrections near sea shores are much more accurate 
+  
+- Added support of automatic rivers removal if they create too big
+  terrain changes - create to deep canyons.
+  
+  By setting parameter river_correction_limit you can remove such rivers.
+  
+  The program would run two passes - first to detect the rivers during
+  altitude correction and second actual correction after removing problematic
+  rivers.
+
 2013-10-22:  Version 0.2
 
 Bug fixes:
@@ -5,7 +41,7 @@ Bug fixes:
 - Fixed bug of not generating shores in Western Hemisphere
 - Fixed bug of the scale parameter not being used.
 - Fixed elevations near sea-shores - set to 0 to reduce water slope problems
-- Removed rivers near edges of terrain - reduce about of slope issues
+- Removed rivers near edges of terrain - reduce amount of slope issues
 - All rivers now have beaches
 
 New features:

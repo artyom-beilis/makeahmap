@@ -1,11 +1,12 @@
+Limitations:
+------------
+
 1. The map that has area that includes the E180 - W180 meridian are not supported
 
 2. The areas below latitude S60 are not supported. (Not much WW2 action thou)
    due to lack of the relevant data from GlobCover database
 
-3. There is known problem of slight misalignment of the rivers and shores, so it is 
-   good idea to check and manually fix them before you continue.
-
-4. Not all elevations are automatically corrected.
-
-
+3. There is known problem of slight misalignment of the rivers and shores.
+   You can try to use river_north_shift/river_east_shift options to
+   amge global corrections and it is good idea to check the rivers
+'  ends before you start working on terrain objects.

@@ -1,7 +1,6 @@
 My plans to add...
 
 1. Add support of water depth for lakes and seas - such that the depth increase according to the distance from a shore.
-2. Automatic fixing elevation/water problem were possible
-3. Automatic clipboard map generation with colors and shading.
-4. Support of map generation that passes E180/W180 line - currently it does not support it (Does it needed?)
-5. Automatic data download, unzip/zip etc.
+2. Automatic clipboard map generation with colors and shading.
+3. Support of map generation that passes E180/W180 line - currently it does not support it (Does it needed?)
+4. Automatic data download, unzip/zip etc.
