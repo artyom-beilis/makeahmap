@@ -1,3 +1,10 @@
+YYYY-MM-DD: Version 0.5
+
+New features:
+
+- Added support of custom gndtype for the areas were water and land are mixed
+- Added support of water depth variation near shores
+
 2013-10-24:  Version 0.4
 
 Bug fixes:

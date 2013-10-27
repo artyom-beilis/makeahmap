@@ -49,6 +49,7 @@ int lake_water_color = 0;
 int river_water_color = 0;
 int land_water_color = 0;
 int river_correction_limit = -1;
+int mixed_ground_type=0; // water
 dem::db_properties db_type;
 
 std::vector<std::vector<unsigned char> > bare_types;
@@ -73,6 +74,9 @@ std::string custom_mapping;
 std::string output_dir = "./output";
 char const *real_file=0;
 char const *color_file=0;
+
+int depth_dist[3];
+
 
 // tiles
 // ntt0000  Deep water ntt0000 will always be deep water  (This is a greyscale BMP designed to vary the water over distances)
@@ -300,6 +304,19 @@ void load_profile(std::istream &in)
         }
         else if(key == "land_water_color") {
             land_water_color = atoi(value.c_str());
+        }
+        else if(key == "sea_depth_range" || key == "lake_depth_range" || key == "river_depth_range") {
+            double d = atof(value.c_str());
+            int pixels  = int(round(d * 32.0));
+            if(key == "sea_depth_range")
+                depth_dist[0]=pixels;
+            else if(key == "lake_depth_range")
+                depth_dist[1]=pixels;
+            else
+                depth_dist[2]=pixels;
+        }
+        else if(key == "mixed_ground_type") {
+            mixed_ground_type = atoi(value.c_str());
         }
         else if(key == "globcover_tiff_path") {
             tiff_file = value;
@@ -571,11 +588,14 @@ void update_gndtype(water_generator &gen)
                 }
             }
             int current_type = types[r][c];
-            if(has_water) {
+            if(has_water && has_land) {
+                types[r][c] = mixed_ground_type;
+            }
+            else if(has_water && current_type!=0) {
                 types[r][c] = 0; // water
             }
             else if(has_land && current_type == 0) {
-                types[r][c] = beach_type;
+                types[r][c] = beach_type; // 0x11; // grass?
             }
         }
     }
@@ -958,13 +978,7 @@ void make_clipboard_map(int max_elev)
                 for(int d=-1,p=0;d<=1;d+=2,p++) {
                     if(e_r + d < 0 || e_r + d >= elev_size || e_c + d < 0 || e_c+d >= elev_size)
                         continue;
-                    try {
-                        e[p]=double(elevations.at(e_r+d).at(e_c+d))/max_elev;
-                    }
-                    catch(...) {
-                        std::cerr << "Elev " << e_r <<" " << e_c << " " << d << std::endl;
-                        throw;
-                    }
+                    e[p]=double(elevations[e_r+d][e_c+d])/max_elev;
                 }
                 double emboss = (e[1]-e[0]) * 5;
                 colors[c] = get_color_from_type(type,emboss);
@@ -1130,7 +1144,7 @@ int main(int argc,char **argv)
         }
         
         std::cout << "- Generating waterd.bmp... " << std::flush;
-        gen.save_waterd_map(output_dir + "/waterd.bmp");
+        gen.save_waterd_map(output_dir + "/waterd.bmp",depth_dist);
         std::cout << "Done" << std::endl;
         
         std::cout << "- Generating waterc.bmp... " << std::flush;

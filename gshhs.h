@@ -272,7 +272,7 @@ public:
 			throw std::runtime_error("Failed to close " + out);
 	}
 
-	void save_waterd_map(std::string out)
+	void save_waterd_map(std::string out,int depth_range[3])
 	{
 		bmp::header hdr(16384,16384);
         std::vector<unsigned char> zeros(16384,0);
@@ -284,16 +284,91 @@ public:
 		fwrite(&hdr,1,sizeof(hdr),f);
 		std::vector<unsigned char> data(water_size);
 
+        std::vector<int> lut[3];
+        for(int i=0;i<3;i++) {
+            int l = depth_range[i];
+            int l2 = l*l;
+            lut[i].resize(l2+1,0);
+            for(int j=0;j<l2;j++) {
+                int v=int(round(sqrt(l2-j) * 254 / l));
+                if(v<0)
+                    v=0;
+                if(v>254)
+                    v=254;
+                lut[i][j]=v;
+            }
+        }
+
 		int pos = 0;
         for(int i=0;i<padding;i++)
             safe_write(&zeros[0],16384,f,out);
+        int prev_percent = -1;
 		for(int r=0;r<water_size;r++) {
+            int percent = (r+1) * 100 / water_size;
+            if(percent != prev_percent) {
+                if(prev_percent!=-1)
+                    std::cout << "\b\b\b\b\b";
+                prev_percent = percent;
+                std::cout << std::setw(3) << percent << "% " << std::flush;
+            }
+
+            bool prev_water_only = false;
+            int prev_type = -1;
 			for(int c=0;c<water_size;c++,pos++)  {
-                int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
-                if(type != land_mark)
-                    data[c]=0;
-                else
-                    data[c]=255;
+                int type = internal_pixel(r,c);
+                if(type == land_mark) {
+                    prev_type = land_mark;
+                    prev_water_only = false;
+                    data[c] = 255;
+                    continue;
+                }
+                int depth_dist = -1;
+                std::vector<int> *l = 0;
+                switch(type) {
+                case sea_mark:
+                    depth_dist = depth_range[0];
+                    l = lut + 0;
+                    break;
+                case lake_mark:
+                    depth_dist = depth_range[1];
+                    l = lut + 1;
+                    break;
+                case river_mark:
+                    depth_dist = depth_range[2];
+                    l = lut + 2;
+                    break;
+                }
+                if(depth_dist == 0) {
+                    data[c] = 0;
+                    continue;
+                }
+                int closest_dist2 = depth_dist * depth_dist;
+                
+                int r_start = std::max(r-depth_dist,0);
+                int r_end  = std::min(r+depth_dist,water_size-1);
+                int c_start = std::max(c-depth_dist,0);
+                int c_end  = std::min(c+depth_dist,water_size-1);
+
+                if(prev_water_only && prev_type == type)
+                    c_start = c_end;
+                bool water_only = true;
+                for(int tr = r_start,dr=r_start - r;tr<=r_end;tr++,dr++) {
+                    int r2 = dr*dr;
+                    for(int tc = c_start,dc = c_start - c;tc<=c_end;tc++,dc++) {
+                        int type = internal_pixel(tr,tc);
+                        if(type == land_mark) {
+                            int c2 = dc*dc;
+                            int D = r2 + c2;
+                            if(D < closest_dist2)
+                                closest_dist2 = D;
+                            water_only = false;
+                        }
+                    }
+                }
+                prev_water_only = water_only;
+                prev_type = type;
+                
+                data[c] = (*l)[closest_dist2];
 			}
             safe_write(&zeros[0],padding,f,out);
 			safe_write(&data[0],data.size(),f,out);
