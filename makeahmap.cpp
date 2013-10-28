@@ -34,6 +34,7 @@
 #include <stdexcept>
 #include <math.h>
 #include <iomanip>
+#include <limits>
 #include <set>
 #include "bmp.h"
 #include "gshhs.h"
@@ -47,6 +48,7 @@ int lake_water_color = 0;
 int river_water_color = 0;
 int land_water_color = 0;
 int river_correction_limit = -1;
+bool remove_entire_river = false;
 int mixed_ground_type=0; // water
 dem::db_properties db_type;
 
@@ -297,6 +299,14 @@ void load_profile(std::istream &in)
         }
         else if(key == "river_correction_limit") {
             river_correction_limit = atoi(value.c_str());
+        }
+        else if(key == "river_removal_policy") {
+            if(value == "full")
+                remove_entire_river = true;
+            else if(value == "partial")
+                remove_entire_river = false;
+            else 
+                throw std::runtime_error("Invalid value " + value +" for key " + key + " expected 'full' or 'partial'");
         }
         else if(key == "river_north_shift") {
             river_north_shift = atof(value.c_str());
@@ -1025,8 +1035,12 @@ struct river_mark_callback {
                     continue;
                 int diff = (*data)[vr][vc] - elevations[vr][vc];
                 if(diff > limit) {
-                    if(ignore_set->find(id) == ignore_set->end())
-                        ignore_set->insert(std::make_pair(id,segment+1));
+                    if(ignore_set->find(id) == ignore_set->end()) {
+                        if(remove_entire_river)
+                            ignore_set->insert(std::make_pair(id,std::numeric_limits<int>::max()));
+                        else
+                            ignore_set->insert(std::make_pair(id,segment+1));
+                    }
                 }
             }
         }
