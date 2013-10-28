@@ -202,6 +202,56 @@ void load_custom_type_mapping()
     }
 }
 
+bool parse(int line,std::string const &in,std::string &key,std::string &value)
+{
+    key.erase();
+    value.erase();
+
+    size_t key_start = in.find_first_not_of(" \t\r\n");
+    if(key_start==std::string::npos || in[key_start]=='#')
+        return false;
+    size_t key_end = in.find_first_of(" \r\n\t=",key_start);
+    if(key_end==std::string::npos)
+        throw std::runtime_error("Key missing value in line " + std::to_string(line));
+    size_t p = in.find_first_not_of(" \r\n\t",key_end);
+    if(p==std::string::npos)
+        throw std::runtime_error("Key missing value in line " + std::to_string(line));
+    if(in[p]=='=') {
+        p = in.find_first_not_of(" \r\n\t",p+1);
+        if(p==std::string::npos)
+            throw std::runtime_error("Key missing value in line " + std::to_string(line));
+    }
+    if(in[p]=='#')
+            throw std::runtime_error("Key missing value in line " + std::to_string(line));
+    
+    size_t value_start,value_end;
+    char c;
+    if((c=in[p])=='"' || c=='\'') {
+        p++;
+        value_start=p;
+        p=in.find_first_of(c,p);
+        if(p==std::string::npos)
+            throw std::runtime_error("Incomplete string in line " + std::to_string(line));
+        value_end = p;
+        p++;
+    }
+    else {
+        value_start=p;
+        p=in.find_first_of(" \t\r\n#",p);
+        if(p==std::string::npos)
+            p=in.size();
+        if(value_start==p)
+            throw std::runtime_error("Empty value in line " + std::to_string(line));
+        value_end=p;
+    }
+    p=in.find_first_not_of(" \t\r\n",p);
+    if(p!=std::string::npos && in[p]!='#') 
+        throw std::runtime_error("Unexpected content after a value in line " + std::to_string(line));
+    key = in.substr(key_start,key_end-key_start);
+    value = in.substr(value_start,value_end-value_start);
+    return true;
+}
+
 void load_profile(std::istream &in)
 {
     std::string dem_prefix;
@@ -214,23 +264,9 @@ void load_profile(std::istream &in)
         std::string s;
         std::getline(in,s);
         line++;
-        if(s[0]=='#')
-            continue;
-        bool found =false;
-        for(size_t i=0;i<s.size() && !found;i++) {
-            if(s[i]!=' ' && s[i] != '\t' && s[i] != '\r')
-                found = true;
-        }
-        if(!found)
-            continue;
-        std::istringstream ss(s);
         std::string key,value;
-        ss >> key >> value;
-        if(!ss) {
-            std::ostringstream ss;
-            ss << "Invalid entry in confiuguration file line " << line;
-            throw std::runtime_error(ss.str());
-        }
+        if(!parse(line,s,key,value))
+            continue;
         if(key == "map_size") {
             map_size = atoi(value.c_str());
             switch(map_size) {
@@ -380,7 +416,7 @@ void load_profile(std::istream &in)
             }
         }
         else {
-            throw std::runtime_error("Unknown key " + key);
+            throw std::runtime_error("Unknown key `" + key + "' with value `"+value+"'");
         }
     }
     if(via_scale == via_coord) {

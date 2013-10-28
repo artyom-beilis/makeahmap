@@ -1,9 +1,17 @@
 YYYY-MM-DD: Version 0.5
 
+Bug fixes:
+
+- Fixed river rendering to have proper width for rivers at NW/SW directions
+- Fixed river width meaning now it really river width in pixels not 1+2*w
+- Fixed support of spaces in path names
+
 New features:
 
 - Added support of custom gndtype for the areas were water and land are mixed
 - Added support of water depth variation near shores
+- Added support of river width per river level
+- Added more fine grained river removal such as a part of river is removed rather than entire one
 
 2013-10-24:  Version 0.4
 
