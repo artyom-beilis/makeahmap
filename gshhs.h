@@ -38,6 +38,29 @@
 #include <math.h>
 #include <functional>
 #include <assert.h>
+#include <map>
+
+
+struct river_properties {
+    double lat_shift;
+    double lon_shift;
+    int max_level;
+    int default_width;
+    std::map<int,int> level_to_width;
+    std::map<int,int> start_points;
+    river_properties() :
+        lat_shift(0.0),
+        lon_shift(0.0),
+        max_level(-1),
+        default_width(1),
+        level_to_width({ { 1, 6 }, { 2, 5 }, { 3 , 4 } , { 4 , 3 }, { 5, 3} , { 5 , 2 } })
+    {
+        lat_shift = 0;
+        lon_shift = 0;
+        max_level = -1;
+        default_width = 2;
+    }
+};
 
 
 inline void switch_endian(int &x)
@@ -65,8 +88,6 @@ T range_limit(T x,T min,T max)
 		return max;
 	return x;
 }
-
-
 
 class water_generator {
 	struct GSHHS {  /* Global Self-consistent Hierarchical High-resolution Shorelines */
@@ -303,6 +324,7 @@ public:
         for(int i=0;i<padding;i++)
             safe_write(&zeros[0],16384,f,out);
         int prev_percent = -1;
+        
 		for(int r=0;r<water_size;r++) {
             int percent = (r+1) * 100 / water_size;
             if(percent != prev_percent) {
@@ -349,8 +371,9 @@ public:
                 int c_start = std::max(c-depth_dist,0);
                 int c_end  = std::min(c+depth_dist,water_size-1);
 
-                if(prev_water_only && prev_type == type)
+                if(prev_water_only && prev_type == type) {
                     c_start = c_end;
+                }
                 bool water_only = true;
                 for(int tr = r_start,dr=r_start - r;tr<=r_end;tr++,dr++) {
                     int r2 = dr*dr;
@@ -380,7 +403,7 @@ public:
 			throw std::runtime_error("Failed to close " + out);
 	}
     
-    typedef std::function<void(int,int,int)> point_callback_type;
+    typedef std::function<void(int/*id*/,int /*segment*/,int/*r*/,int/*c*/)> point_callback_type;
     
     struct callback_guard {
         callback_guard(point_callback_type const &cb,water_generator &gen) : 
@@ -395,38 +418,39 @@ public:
         water_generator *gen_;
     };
     
-	void load_rivers(std::string file_name,
-                     int width,
-                     int min_level,
-                     double flat_shift,
-                     double flon_shift,
-                     std::set<int> const &black_list=std::set<int>()
-        )
+	void load_rivers(std::string file_name,river_properties const &prop)
 	{
-        int lat_shift = int(round(flat_shift*1e6));
-        int lon_shift = int(round(flon_shift*1e6));
+        int lat_shift = int(round(prop.lat_shift*1e6));
+        int lon_shift = int(round(prop.lon_shift*1e6));
 		open(file_name);
 		while(get()) {
 			int level = (hdr.flag & 255);
-            if(min_level != -1 && level > min_level)
+            if(prop.max_level != -1 && level > prop.max_level)
                 continue;
-            if(black_list.find(hdr.id)!=black_list.end())
-                continue;
+            int end_point = 0;
+            auto black_list = prop.start_points.find(hdr.id);
+            if(black_list!=prop.start_points.end())
+                end_point = black_list->second;
 			for(int i=0;i<points;i++) {
                 poly[i].y+=lat_shift;
                 poly[i].x+=lon_shift;
             }
-			for(int i=0;i<points-1;i++) {
-				point start = poly[i];
-				point end = poly[i+1];
+            double width = prop.default_width;
+            auto specific_width = prop.level_to_width.find(level);
+            if(specific_width != prop.level_to_width.end())
+                width = specific_width->second;
+            double radius = width / 2;
+			for(int i=points-2;i>=end_point;i--) {
+				point start = poly[i+1];
+				point end = poly[i];
 				if(!(between(start.x,lon1,lon2) && between(start.y,lat1,lat2))
 				   && !(between(end.x,lon1,lon2) && between(end.y,lat1,lat2)))
 				{
 					continue;
 				}
 
-				draw_point(start,width);
-				draw_point(end,width);
+				draw_point(start,radius,i);
+				draw_point(end,radius,i);
 
 				if(labs(start.x - end.x) > labs(start.y - end.y)) {
 
@@ -445,14 +469,14 @@ public:
 					for(int c=c_start;c<=c_end;c++) {
 						double x = col_2_lon * c + lon1;
 						double y = a*x + b;
-						int r = int(round((y - lat1) * lat_2_row));
-						if(r<0 || r>=water_size)
-							continue;
-						for(int rr=r-width;rr<=r+width;rr++) {
+                        draw_point(point(int(round(x)),int(round(y))),radius,i);
+                        /*
+						int r = int(round((y - lat1) * lat_2_row - half_width));
+						for(int rr=r;rr<=r+integer_width;rr++) {
 							if(rr >= 0 && rr<water_size) {
 								mark(river_mark,rr,c);
 							}
-						}
+						}*/
 					}
 				}
 				else if(start.y != end.y) {
@@ -472,7 +496,10 @@ public:
 					for(int r=r_start;r<=r_end;r++) {
 						double y = row_2_lat * r + lat1;
 						double x = a*y + b;
-						int c = int(round((x - lon1) * lon_2_col));
+                        
+                        draw_point(point(int(round(x)),int(round(y))),radius,i);
+                        /*
+						int c = int(round((x - lon1) * lon_2_col - half_width));
 						if(c<0 || c>=water_size)
 							continue;
 						
@@ -480,7 +507,7 @@ public:
 							if(cc >= 0 && cc<water_size) {
 								mark(river_mark,r,cc);
 							}
-						}
+						}*/
 					}
 				}
 
@@ -542,10 +569,10 @@ private:
         }
     }
 
-  	void mark(int type,int r,int c)
+  	void mark(int type,int r,int c,int segment=-1)
 	{
         if(cb_) {
-            cb_(hdr.id,(water_size-1)-r,c);
+            cb_(hdr.id,segment,(water_size-1)-r,c);
             return;
         }
 		int p = r * water_size + c;
@@ -572,19 +599,23 @@ private:
 	}
 
 
-	void draw_point(point p,int width)
+	void draw_point(point p,double radius,int segment)
 	{
-		int r_center = int(round((p.y - lat1)*lat_2_row));
-		int c_center = int(round((p.x - lon1)*lon_2_col));
-		for(int dr = -width;dr<=width;dr++) {
-			for(int dc = -width;dc<=width;dc++) {
-				if(dr*dr + dc*dc > (width+1) * (width+1))
+        int iradius = floor(radius);
+        double r_center_f = (p.y - lat1)*lat_2_row;
+        double c_center_f = (p.x - lon1)*lon_2_col;
+		int r_center = int(round(r_center_f));
+		int c_center = int(round(c_center_f));
+		for(int r = r_center-iradius;r<=r_center+iradius;r++) {
+			for(int c = c_center-iradius;c<=c_center + iradius;c++) {
+                double dr = r - r_center_f;
+                double dc = c - c_center_f;
+                double R2 = dr*dr + dc * dc;
+				if(R2 > radius*radius)
 					continue;
-				int r = r_center+dr;
-				int c = c_center+dc;
 				if(c < 0 || c >= water_size || r<0 || r>=water_size)
 					continue;
-				mark(river_mark,r,c);
+				mark(river_mark,r,c,segment);
 			}
 		}
 	}

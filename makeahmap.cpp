@@ -43,8 +43,6 @@
 
 std::vector<std::vector<uint16_t> > elevations;
 int map_size = 512;
-int river_width = 1;
-int river_level = -1;
 int lake_water_color = 0;
 int river_water_color = 0;
 int land_water_color = 0;
@@ -59,13 +57,13 @@ static const int lower_lat = -65;
 
 double lat1 = -1000,lat2 = -1000;
 double lon1 = -1000,lon2 = -1000;
+
+river_properties rv_prop;
+
 double river_north_shift = 0.0;
 double river_east_shift = 0.0;
-
-double river_lat_shift = 0.0;
-double river_lon_shift = 0.0;
-
 bool fix_river_slopes = true;
+
 std::string map_name = "map";
 std::string tiff_file="./data/globcover/GLOBCOVER_L4_200901_200912_V2.3.tif";
 std::string shores = "./data/gshhs/gshhs_f.b";
@@ -282,10 +280,17 @@ void load_profile(std::istream &in)
                 throw std::runtime_error("Invalid value of fix_river_slopes option, should be yes or no");
         }
         else if(key == "river_width") {
-            river_width = atoi(value.c_str());
+            rv_prop.default_width = atoi(value.c_str());
+            rv_prop.level_to_width.clear();
+        }
+        else if(key.find_first_of("river_width[")==0 && key.back()==']') {
+            std::string slevel = key.substr(12,key.size()-13);
+            int level = atoi(slevel.c_str());
+            int width = atoi(value.c_str());
+            rv_prop.level_to_width[level]=width;
         }
         else if(key == "river_level") {
-            river_level = atoi(value.c_str());
+            rv_prop.max_level = atoi(value.c_str());
         }
         else if(key == "river_water_color") {
             river_water_color = atoi(value.c_str());
@@ -402,8 +407,8 @@ void load_profile(std::istream &in)
     }
     double miles_to_lat =  1.60934 / 1.852 / 60;
     double miles_to_lon =  miles_to_lat / cos(lat_c / 180 * 3.14159);
-    river_lat_shift = miles_to_lat * river_north_shift;
-    river_lon_shift = miles_to_lon * river_east_shift;
+    rv_prop.lat_shift = miles_to_lat * river_north_shift;
+    rv_prop.lon_shift = miles_to_lon * river_east_shift;
     
 }
 
@@ -1006,10 +1011,10 @@ int get_elevation(double lat,double lon)
 
 struct river_mark_callback {
     std::vector<std::vector<uint16_t> > const *data;
-    std::set<int> *ignore_set;
+    std::map<int,int> *ignore_set;
     int limit;
     
-    void operator()(int id,int r,int c) const
+    void operator()(int id,int segment,int r,int c) const
     {
         int el_size = map_size * 2;
         r = water_to_elev_row(r);
@@ -1019,8 +1024,10 @@ struct river_mark_callback {
                 if(vr < 0 || vr>= el_size || vc < 0 || vc>= el_size)
                     continue;
                 int diff = (*data)[vr][vc] - elevations[vr][vc];
-                if(diff > limit)
-                    ignore_set->insert(id);
+                if(diff > limit) {
+                    if(ignore_set->find(id) == ignore_set->end())
+                        ignore_set->insert(std::make_pair(id,segment+1));
+                }
             }
         }
     }
@@ -1028,11 +1035,14 @@ struct river_mark_callback {
 
 struct removed_river_callback {
     std::vector<std::vector<uint16_t> > *data;
-    std::set<int> *ignore_set;
+    std::map<int,int> *ignore_set;
     
-    void operator()(int id,int r,int c) const
+    void operator()(int id,int segment,int r,int c) const
     {
-        if(ignore_set->find(id) == ignore_set->end())
+        auto p = ignore_set->find(id);
+        if(p == ignore_set->end())
+            return;
+        if(segment>=p->second)
             return;
         int el_size = map_size * 2;
         r = water_to_elev_row(r);
@@ -1043,16 +1053,16 @@ struct removed_river_callback {
     }
 };
 
-std::set<int> pass_one()
+void pass_one()
 {
     std::vector<std::vector<uint16_t> > fully_saved(elevations);
-    std::set<int> ignore_set;
+    std::map<int,int> ignore_set;
     std::cout << "- Pass 1: Collecting required water slope corrections " << std::endl;
     water_generator gen(lat1,lat2,lon1,lon2,map_size * 32);
 
     std::cout << "  --  Loading & processing shores & river data... " << std::endl;
     gen.load_land(shores);
-    gen.load_rivers(rivers,river_width,river_level,river_lat_shift,river_lon_shift,ignore_set);
+    gen.load_rivers(rivers,rv_prop);
     gen.make_border();
 
 
@@ -1071,7 +1081,9 @@ std::set<int> pass_one()
         river_mark_callback cb = { &river_elevations, &ignore_set, river_correction_limit };
         {
             water_generator::callback_guard guard(cb,gen);
-            gen.load_rivers(rivers,river_width,river_level,river_lat_shift,river_lon_shift,ignore_set);
+            river_properties rv = rv_prop;
+            rv.start_points = ignore_set;
+            gen.load_rivers(rivers,rv);
         }
     }
     std::cout << "  -- Found " << ignore_set.size() << " rivers causing elevation drops above " <<  river_correction_limit << " feet"<< std::endl;
@@ -1081,14 +1093,14 @@ std::set<int> pass_one()
         removed_river_callback cb = { &removed_rivers, &ignore_set};
         {
             water_generator::callback_guard guard(cb,gen);
-            gen.load_rivers(rivers,river_width,river_level,river_lat_shift,river_lon_shift,std::set<int>());
+            gen.load_rivers(rivers,rv_prop);
         }
         altitude_to_bmp(output_dir + "/removed_rivers.bmp", removed_rivers);
     }
     std::cout << "done" << std::endl;
     
     elevations.swap(fully_saved);
-    return ignore_set;
+    rv_prop.start_points = ignore_set;
 }
 
 int main(int argc,char **argv)
@@ -1126,19 +1138,17 @@ int main(int argc,char **argv)
         
         std::set<int> ignore_set;
         
-        if(river_correction_limit != -1 && fix_river_slopes && river_level != 0) {
-            std::set<int> tmp = pass_one();
-            ignore_set.swap(tmp);
-        }
+        if(river_correction_limit != -1 && fix_river_slopes && rv_prop.max_level != 0)
+            pass_one();
                 
         water_generator gen(lat1,lat2,lon1,lon2,map_size * 32);
         std::cout << "- Loading & processing shores data... " << std::flush;
         gen.load_land(shores);
         std::cout << "Done" << std::endl;
         
-        if(river_level != 0) {
+        if(rv_prop.max_level != 0) {
             std::cout << "- Loading & processing rivers data... " << std::endl;
-            gen.load_rivers(rivers,river_width,river_level,river_lat_shift,river_lon_shift,ignore_set);
+            gen.load_rivers(rivers,rv_prop);
             gen.make_border();
             std::cout << "  Complete" << std::endl;
         }
