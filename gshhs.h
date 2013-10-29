@@ -41,19 +41,23 @@
 #include <map>
 
 
-struct river_properties {
+struct water_properties {
     double lat_shift;
     double lon_shift;
     int max_level;
     int default_width;
     std::map<int,int> level_to_width;
     std::map<int,int> start_points;
-    river_properties() :
+    int colors[4];
+    int depth_range[4];
+    water_properties() :
         lat_shift(0.0),
         lon_shift(0.0),
         max_level(-1),
         default_width(1),
-        level_to_width({ { 1, 6 }, { 2, 5 }, { 3 , 4 } , { 4 , 3 }, { 5, 3} , { 5 , 2 } })
+        level_to_width({ { 1, 6 }, { 2, 5 }, { 3 , 4 } , { 4 , 3 }, { 5, 3} , { 5 , 2 } }),
+        colors({0,0,0,0}),
+        depth_range({0,0,0,0})
     {
         lat_shift = 0;
         lon_shift = 0;
@@ -150,6 +154,7 @@ public:
 
 	int water_size;
 	std::vector<unsigned char> watermap;
+    std::vector<std::vector<unsigned char> > water_types;
 	
 	water_generator(double flat1,double flat2,double flon1,double flon2,int water_size_in)
 	{
@@ -247,67 +252,52 @@ public:
 		close();
 	}
 	
-    void save_waterc_map(std::string out,int lake_color,int river_color,int land_color)
+    void save_waterc_map(std::string out,water_properties const &prop)
 	{
 		bmp::header hdr(16384,16384);
         std::vector<unsigned char> zeros(16384,0);
         int padding=(16384 - water_size)/2;
-		FILE *f=fopen(out.c_str(),"wb");
-		if(!f) 
-			throw std::runtime_error("Failed to open " + out);
+        outfile f(out);
+        f.write(&hdr,sizeof(hdr));
 
-		fwrite(&hdr,1,sizeof(hdr),f);
 		std::vector<unsigned char> data(water_size);
         
 
 		int pos = 0;
         for(int i=0;i<padding;i++)
-            safe_write(&zeros[0],16384,f,out);
+            f.write(&zeros[0],16384);
 		for(int r=0;r<water_size;r++) {
 			for(int c=0;c<water_size;c++,pos++)  {
                 int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
-                unsigned char color;
-                switch(type) {
-                case river_mark:
-                    color = river_color;
-                    break;
-                case lake_mark:
-                    color = lake_color;
-                    break;
-                case land_mark:
-                    color = land_color;
-                    break;
-                default:
-                    color = 0;
-                }
-                
+                unsigned char color = prop.colors[type];
                 data[c]=color;
 			}
-            safe_write(&zeros[0],padding,f,out);
-			safe_write(&data[0],data.size(),f,out);
-            safe_write(&zeros[0],padding,f,out);
+            f.write(&zeros[0],padding);
+			f.write(&data[0],data.size());
+            f.write(&zeros[0],padding);
 		}
         for(int i=0;i<padding;i++)
-            safe_write(&zeros[0],16384,f,out);
-		if(fclose(f)!=0) 
-			throw std::runtime_error("Failed to close " + out);
+            f.write(&zeros[0],16384);
+        f.close();
 	}
 
-	void save_waterd_map(std::string out,int depth_range[3])
+	void save_waterd_map(std::string out,water_properties const &prop)
 	{
+        water_types.clear();
+        
+        water_types.resize(water_size/4,std::vector<unsigned char>(water_size/4,0));
+        
 		bmp::header hdr(16384,16384);
         std::vector<unsigned char> zeros(16384,0);
         int padding=(16384 - water_size)/2;
-		FILE *f=fopen(out.c_str(),"wb");
-		if(!f) 
-			throw std::runtime_error("Failed to open " + out);
-
-		fwrite(&hdr,1,sizeof(hdr),f);
+        outfile f(out);
+		f.write(&hdr,sizeof(hdr));
+        
 		std::vector<unsigned char> data(water_size);
 
-        std::vector<int> lut[3];
-        for(int i=0;i<3;i++) {
-            int l = depth_range[i];
+        std::vector<int> lut[4];
+        for(int i=0;i<4;i++) {
+            int l = prop.depth_range[i];
             int l2 = l*l;
             lut[i].resize(l2+1,0);
             for(int j=0;j<l2;j++) {
@@ -322,7 +312,7 @@ public:
 
 		int pos = 0;
         for(int i=0;i<padding;i++)
-            safe_write(&zeros[0],16384,f,out);
+            f.write(&zeros[0],16384);
         int prev_percent = -1;
         
 		for(int r=0;r<water_size;r++) {
@@ -344,23 +334,10 @@ public:
                     data[c] = 255;
                     continue;
                 }
-                int depth_dist = -1;
-                std::vector<int> *l = 0;
-                switch(type) {
-                case sea_mark:
-                    depth_dist = depth_range[0];
-                    l = lut + 0;
-                    break;
-                case lake_mark:
-                    depth_dist = depth_range[1];
-                    l = lut + 1;
-                    break;
-                case river_mark:
-                    depth_dist = depth_range[2];
-                    l = lut + 2;
-                    break;
-                }
+                int depth_dist = prop.depth_range[type];
                 if(depth_dist == 0) {
+                    prev_water_only = false;
+                    prev_type = type;
                     data[c] = 0;
                     continue;
                 }
@@ -391,16 +368,23 @@ public:
                 prev_water_only = water_only;
                 prev_type = type;
                 
-                data[c] = (*l)[closest_dist2];
+                data[c] = lut[type][closest_dist2];
 			}
-            safe_write(&zeros[0],padding,f,out);
-			safe_write(&data[0],data.size(),f,out);
-            safe_write(&zeros[0],padding,f,out);
+            for(int c=0;c<water_size;c++) {
+                int type = internal_pixel(r,c);
+                int type_c = c/4;
+                int type_r = (water_size - 1 - r)/4;
+                water_types[type_r][type_c] |= 1u << (type*2);
+                if(type != land_mark && data[c]!=0)
+                    water_types[type_r][type_c] |= 2u << (type*2);
+            }
+            f.write(&zeros[0],padding);
+			f.write(&data[0],data.size());
+            f.write(&zeros[0],padding);
 		}
         for(int i=0;i<padding;i++)
-            safe_write(&zeros[0],16384,f,out);
-		if(fclose(f)!=0) 
-			throw std::runtime_error("Failed to close " + out);
+            f.write(&zeros[0],16384);
+        f.close();
 	}
     
     typedef std::function<void(int/*id*/,int /*segment*/,int/*r*/,int/*c*/)> point_callback_type;
@@ -418,7 +402,7 @@ public:
         water_generator *gen_;
     };
     
-	void load_rivers(std::string file_name,river_properties const &prop)
+	void load_rivers(std::string file_name,water_properties const &prop)
 	{
         int lat_shift = int(round(prop.lat_shift*1e6));
         int lon_shift = int(round(prop.lon_shift*1e6));
@@ -542,14 +526,7 @@ public:
     }
     
 private:
-
-    void safe_write(void const *p,size_t n,FILE *f,std::string const &name)
-    {
-        if(fwrite(p,1,n,f)!=n) {
-            throw std::runtime_error("Failed to write to file "+ name);
-        }
-    }
-    
+   
     point_callback_type cb_;
 
     int internal_pixel(int r,int c)

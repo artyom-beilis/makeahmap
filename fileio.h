@@ -27,6 +27,63 @@
 #include <zlib.h>
 #include <stdexcept>
 #include <string>
+#include <errno.h>
+#include <string.h>
+
+class outfile {
+    outfile(outfile const &);
+    void operator=(outfile const &);
+public:
+    outfile() : f_(0) {}
+    void open(std::string const &name) 
+    {
+        close();
+        name_ = name;
+        f_ = fopen(name.c_str(),"wb");
+        if(!f_) {
+            int err = errno;
+            throw std::runtime_error("Failed to open file `" + name_ + "': " + strerror(err));
+        }
+    }
+    outfile(std::string const &name) : f_(0)
+    {
+        open(name);
+    }
+    void write(void const *buf,size_t s,size_t n)
+    {
+        write(buf,s*n);
+    }
+    void write(void const *buf,size_t n)
+    {
+        if(!f_)
+            throw std::runtime_error("Internal error: outfile - file is not open");
+        if(fwrite(buf,1,n,f_)!=n) {
+            int err = errno;
+            throw std::runtime_error("Failed to write to file `" + name_ + "': " + strerror(err));
+        }
+    }
+    void close()
+    {
+        if(!f_)
+            return;
+        if(fclose(f_)!=0) {
+            int err = errno;
+            f_=0;
+            throw std::runtime_error("Failed to close to file `" + name_ + "': " + strerror(err));
+        }
+        f_ = 0;
+    }
+    ~outfile()
+    {
+        if(f_) {
+            fclose(f_);
+            f_=0;
+        }
+    }
+private:
+    FILE *f_;
+    std::string name_;
+};
 
 class fileio {
     fileio(fileio const &);

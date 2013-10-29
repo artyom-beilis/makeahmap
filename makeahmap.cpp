@@ -35,6 +35,7 @@
 #include <math.h>
 #include <iomanip>
 #include <limits>
+#include <string>
 #include <set>
 #include "bmp.h"
 #include "gshhs.h"
@@ -44,12 +45,8 @@
 
 std::vector<std::vector<uint16_t> > elevations;
 int map_size = 512;
-int lake_water_color = 0;
-int river_water_color = 0;
-int land_water_color = 0;
 int river_correction_limit = -1;
 bool remove_entire_river = false;
-int mixed_ground_type=0; // water
 dem::db_properties db_type;
 
 std::vector<std::vector<unsigned char> > bare_types;
@@ -60,7 +57,8 @@ static const int lower_lat = -65;
 double lat1 = -1000,lat2 = -1000;
 double lon1 = -1000,lon2 = -1000;
 
-river_properties rv_prop;
+water_properties rv_prop;
+int ground_types[4];
 
 double river_north_shift = 0.0;
 double river_east_shift = 0.0;
@@ -74,8 +72,6 @@ std::string custom_mapping;
 std::string output_dir = "./output";
 char const *real_file=0;
 char const *color_file=0;
-
-int depth_dist[3];
 
 
 // tiles
@@ -166,12 +162,6 @@ void prepare_map()
     }
 }
 
-void safe_write(void const *buf,size_t n,FILE *f,std::string const &name)
-{
-    if(fwrite(buf,1,n,f)!=n) {
-        throw std::runtime_error("Failed to write to file " + name);
-    }
-}
 
 void load_custom_type_mapping()
 {
@@ -202,27 +192,33 @@ void load_custom_type_mapping()
     }
 }
 
-bool parse(int line,std::string const &in,std::string &key,std::string &value)
+class parsing_error : public std::runtime_error {
+public:
+    parsing_error(std::string const &v) : std::runtime_error(v) {}
+};
+
+bool parse(std::string const &in,std::string &key,std::string &value,std::string &index)
 {
     key.erase();
     value.erase();
+    index.erase();
 
     size_t key_start = in.find_first_not_of(" \t\r\n");
     if(key_start==std::string::npos || in[key_start]=='#')
         return false;
     size_t key_end = in.find_first_of(" \r\n\t=",key_start);
     if(key_end==std::string::npos)
-        throw std::runtime_error("Key missing value in line " + std::to_string(line));
+        throw parsing_error("Key missing value");
     size_t p = in.find_first_not_of(" \r\n\t",key_end);
     if(p==std::string::npos)
-        throw std::runtime_error("Key missing value in line " + std::to_string(line));
+        throw parsing_error("Key missing value");
     if(in[p]=='=') {
         p = in.find_first_not_of(" \r\n\t",p+1);
         if(p==std::string::npos)
-            throw std::runtime_error("Key missing value in line " + std::to_string(line));
+            throw parsing_error("Key missing value");
     }
     if(in[p]=='#')
-            throw std::runtime_error("Key missing value in line " + std::to_string(line));
+            throw parsing_error("Key missing value");
     
     size_t value_start,value_end;
     char c;
@@ -231,7 +227,7 @@ bool parse(int line,std::string const &in,std::string &key,std::string &value)
         value_start=p;
         p=in.find_first_of(c,p);
         if(p==std::string::npos)
-            throw std::runtime_error("Incomplete string in line " + std::to_string(line));
+            throw parsing_error("Incomplete string");
         value_end = p;
         p++;
     }
@@ -241,197 +237,232 @@ bool parse(int line,std::string const &in,std::string &key,std::string &value)
         if(p==std::string::npos)
             p=in.size();
         if(value_start==p)
-            throw std::runtime_error("Empty value in line " + std::to_string(line));
+            throw parsing_error("Empty value");
         value_end=p;
     }
     p=in.find_first_not_of(" \t\r\n",p);
     if(p!=std::string::npos && in[p]!='#') 
-        throw std::runtime_error("Unexpected content after a value in line " + std::to_string(line));
-    key = in.substr(key_start,key_end-key_start);
+        throw parsing_error("Unexpected content after a value");
     value = in.substr(value_start,value_end-value_start);
+    key = in.substr(key_start,key_end-key_start);
+    p=key.find_first_of("[]");
+    if(p!=std::string::npos) {
+        if( p==0 ||
+            key[p]!='[' 
+            || key.back()!=']' 
+            || (index = key.substr(p+1,key.size() - p - 2)).find_first_of("[]")!=std::string::npos
+            || index.empty())
+        {
+            throw parsing_error("Key with index format should be `key[index]' ");
+        }
+        key = key.substr(0,p) + "[]";
+    }
     return true;
 }
 
-void load_profile(std::istream &in)
+int get_type_index(std::string const &index)
 {
+    if(index=="sea")
+        return water_generator::sea_mark;
+    if(index=="land")
+        return water_generator::land_mark;
+    if(index=="lake")
+        return water_generator::lake_mark;
+    if(index=="river")
+        return water_generator::river_mark;
+    return -1;
+}
+
+
+void load_profile(std::string file_name)
+{
+    std::ifstream in(file_name.c_str());
+    if(!in) {
+        throw std::runtime_error("Failed to open file " + file_name);
+    }
+
     std::string dem_prefix;
     bool via_scale = false;
     bool via_coord = false;
     double scale = -1;
     double lat_c=-1000,lon_c=-1000;
     int line = 0;
-    while(!in.eof()) {
-        std::string s;
-        std::getline(in,s);
-        line++;
-        std::string key,value;
-        if(!parse(line,s,key,value))
-            continue;
-        if(key == "map_size") {
-            map_size = atoi(value.c_str());
-            switch(map_size) {
-            case 64:
-            case 128:
-            case 256:
-            case 512:
-                break;
-            default:
-                throw std::runtime_error("Invalid map size " + value);
+    try {
+        while(!in.eof()) {
+            std::string s;
+            std::getline(in,s);
+            line++;
+            std::string key,value,index;
+            if(!parse(s,key,value,index))
+                continue;
+            if(key == "map_size") {
+                map_size = atoi(value.c_str());
+                switch(map_size) {
+                case 64:
+                case 128:
+                case 256:
+                case 512:
+                    break;
+                default:
+                    throw parsing_error("Invalid map size " + value);
+                }
             }
-        }
-        else if(key=="type_mapping") {
-            custom_mapping = value;
-        }
-        else if(key=="dem") {
-            if(value == "srtm3") {
-                db_type = dem::srtm3();
+            else if(key=="type_mapping") {
+                custom_mapping = value;
             }
-            else if(value == "srtm30") {
-                db_type = dem::srtm30();
+            else if(key=="dem") {
+                if(value == "srtm3") {
+                    db_type = dem::srtm3();
+                }
+                else if(value == "srtm30") {
+                    db_type = dem::srtm30();
+                }
+                else if(value=="gtopo30") {
+                    db_type = dem::gtopo30();
+                }
+                else {
+                    throw parsing_error("Invalid database type name " + value + " valid are srtm3, srtm30 or gtopo30");
+                }
             }
-            else if(value=="gtopo30") {
-                db_type = dem::gtopo30();
+            else if(key == "scale") {
+                via_scale = true;
+                scale = atof(value.c_str());
+            }
+            else if(key == "map_name") {
+                map_name = value;
+            }
+            else if(key == "shores") {
+                shores = value;
+            }
+            else if(key == "rivers") {
+                rivers = value;
+            }
+            else if(key == "fix_river_slopes") {
+                if(value == "yes")
+                    fix_river_slopes = true;
+                else if(value == "no")
+                    fix_river_slopes = false;
+                else
+                    throw parsing_error("Invalid value of fix_river_slopes option, should be yes or no");
+            }
+            else if(key == "river_width") {
+                rv_prop.default_width = atoi(value.c_str());
+                rv_prop.level_to_width.clear();
+            }
+            else if(key == "river_width[]") {
+                int level = atoi(index.c_str());
+                int width = atoi(value.c_str());
+                rv_prop.level_to_width[level]=width;
+            }
+            else if(key == "river_level") {
+                rv_prop.max_level = atoi(value.c_str());
+            }
+            else if(key == "river_correction_limit") {
+                river_correction_limit = atoi(value.c_str());
+            }
+            else if(key == "river_removal_policy") {
+                if(value == "full")
+                    remove_entire_river = true;
+                else if(value == "partial")
+                    remove_entire_river = false;
+                else 
+                    throw parsing_error("Invalid value " + value +" for key " + key + " expected 'full' or 'partial'");
+            }
+            else if(key == "river_north_shift") {
+                river_north_shift = atof(value.c_str());
+            }
+            else if(key == "river_east_shift") {
+                river_east_shift = atof(value.c_str());
+            }
+            else if(key == "water_color[]") {
+                int mark = get_type_index(index);
+                if(mark < 0)
+                    throw parsing_error("Invalid index " + index + " for water_color[]");
+                rv_prop.colors[mark]=atoi(value.c_str());
+            }
+            else if(key == "depth_range[]") {
+                double d = atof(value.c_str());
+                int pixels  = int(round(d * 32.0));
+                int type = get_type_index(index);
+                if(type < 0 || type == water_generator::land_mark) {
+                    throw parsing_error("Invalid index for depth_range[] - required one of sea, lake or river");
+                }
+                rv_prop.depth_range[type]=pixels;
+            }
+            else if(key == "ground_type[]") {
+                int gtype = atoi(value.c_str());
+                int type = get_type_index(index);
+                if(type < 0 || type == water_generator::land_mark) {
+                    throw parsing_error("Invalid index for ground_type[] - required one of sea, lake or river");
+                }
+                ground_types[type]=gtype;
+            }
+            else if(key == "globcover_tiff_path") {
+                tiff_file = value;
+            }
+            else if(key == "dem_path") {
+                dem_prefix = value;
+            }
+            else if(key == "output_dir") {
+                output_dir = value;
+            }
+            else if(key == "lat1" || key == "lat2" || key=="lat") {
+                double v = atof(value.c_str());
+                if(!(-60 < v && v < 90))
+                    throw parsing_error("Invalid latitude " + value + " should be in rage [-60,90]");
+                if(key == "lat1") {
+                    lat1 = v;
+                    via_coord = true;
+                }
+                else if(key == "lat2") {
+                    lat2 = v;
+                    via_coord = true;
+                }
+                else {
+                    lat_c = v;
+                    via_scale = true;
+               }
+            }
+            else if(key == "lon1" || key == "lon2" || key=="lon") {
+                double v = atof(value.c_str());
+                if(!(-180 < v && v < 180))
+                    throw parsing_error("Invalid longitude " + value + " should be in rage [-180,180]");
+                if(key == "lon1") {
+                    lon1 = v;
+                    via_coord = true;
+                }
+                else if(key == "lon2") {
+                    lon2 = v;
+                    via_coord = true;
+                }
+                else if(key == "lon") {
+                    lon_c = v;
+                    via_scale = true;
+                }
             }
             else {
-                throw std::runtime_error("Invalid database type name " + value + " valid are srtm3, srtm30 or gtopo30");
+                throw parsing_error("Unknown key `" + key + "' with value `"+value+"'");
             }
-        }
-        else if(key == "scale") {
-            via_scale = true;
-            scale = atof(value.c_str());
-        }
-        else if(key == "map_name") {
-            map_name = value;
-        }
-        else if(key == "shores") {
-            shores = value;
-        }
-        else if(key == "rivers") {
-            rivers = value;
-        }
-        else if(key == "fix_river_slopes") {
-            if(value == "yes")
-                fix_river_slopes = true;
-            else if(value == "no")
-                fix_river_slopes = false;
-            else
-                throw std::runtime_error("Invalid value of fix_river_slopes option, should be yes or no");
-        }
-        else if(key == "river_width") {
-            rv_prop.default_width = atoi(value.c_str());
-            rv_prop.level_to_width.clear();
-        }
-        else if(key.find_first_of("river_width[")==0 && key.back()==']') {
-            std::string slevel = key.substr(12,key.size()-13);
-            int level = atoi(slevel.c_str());
-            int width = atoi(value.c_str());
-            rv_prop.level_to_width[level]=width;
-        }
-        else if(key == "river_level") {
-            rv_prop.max_level = atoi(value.c_str());
-        }
-        else if(key == "river_water_color") {
-            river_water_color = atoi(value.c_str());
-        }
-        else if(key == "river_correction_limit") {
-            river_correction_limit = atoi(value.c_str());
-        }
-        else if(key == "river_removal_policy") {
-            if(value == "full")
-                remove_entire_river = true;
-            else if(value == "partial")
-                remove_entire_river = false;
-            else 
-                throw std::runtime_error("Invalid value " + value +" for key " + key + " expected 'full' or 'partial'");
-        }
-        else if(key == "river_north_shift") {
-            river_north_shift = atof(value.c_str());
-        }
-        else if(key == "river_east_shift") {
-            river_east_shift = atof(value.c_str());
-        }
-        else if(key == "lake_water_color") {
-            lake_water_color = atoi(value.c_str());
-        }
-        else if(key == "land_water_color") {
-            land_water_color = atoi(value.c_str());
-        }
-        else if(key == "sea_depth_range" || key == "lake_depth_range" || key == "river_depth_range") {
-            double d = atof(value.c_str());
-            int pixels  = int(round(d * 32.0));
-            if(key == "sea_depth_range")
-                depth_dist[0]=pixels;
-            else if(key == "lake_depth_range")
-                depth_dist[1]=pixels;
-            else
-                depth_dist[2]=pixels;
-        }
-        else if(key == "mixed_ground_type") {
-            mixed_ground_type = atoi(value.c_str());
-        }
-        else if(key == "globcover_tiff_path") {
-            tiff_file = value;
-        }
-        else if(key == "dem_path") {
-            dem_prefix = value;
-        }
-        else if(key == "output_dir") {
-            output_dir = value;
-        }
-        else if(key == "lat1" || key == "lat2" || key=="lat") {
-            double v = atof(value.c_str());
-            if(!(-60 < v && v < 90)) {
-                std::ostringstream ss;
-                ss << "Invalid latitude " << value << " should be in rage [-60,90]";
-                throw std::runtime_error(ss.str());
-            }
-            if(key == "lat1") {
-                lat1 = v;
-                via_coord = true;
-            }
-            else if(key == "lat2") {
-                lat2 = v;
-                via_coord = true;
-            }
-            else {
-                lat_c = v;
-                via_scale = true;
-           }
-        }
-        else if(key == "lon1" || key == "lon2" || key=="lon") {
-            double v = atof(value.c_str());
-            if(!(-180 < v && v < 180))
-                throw std::runtime_error("Invalid longitude " + value + " should be in rage [-180,180]");
-            if(key == "lon1") {
-                lon1 = v;
-                via_coord = true;
-            }
-            else if(key == "lon2") {
-                lon2 = v;
-                via_coord = true;
-            }
-            else if(key == "lon") {
-                lon_c = v;
-                via_scale = true;
-            }
-        }
-        else {
-            throw std::runtime_error("Unknown key `" + key + "' with value `"+value+"'");
         }
     }
+    catch(parsing_error const &e) {
+        std::ostringstream ss;
+        ss << "Error in " << file_name  << ", line " << line << ": " << e.what();
+        throw std::runtime_error(ss.str());
+    }
     if(via_scale == via_coord) {
-        throw std::runtime_error("Either lat/lon/scale or lat1/lat2/lon1/lon2 should be specified");
+        throw std::runtime_error("Configuration error: either lat/lon/scale or lat1/lat2/lon1/lon2 should be specified");
     }
     if(via_coord) {
         if(lat1 == -1000 || lat2 == -1000 || lon1 == -1000 || lon2 == -1000) {
-            throw std::runtime_error("The latitude or longitude range and not fully defined");
+            throw std::runtime_error("Configuration error: the latitude or longitude range and not fully defined");
         }
         lat_c = (lat1+lat2)/2;
         lon_c = (lon1+lon2)/2;
     }
     else { // via scale
         if(lat_c == -1000 || lon_c == -1000 || scale == -1) {
-            throw std::runtime_error("The latitude, longitude or scane are not fully defined");
+            throw std::runtime_error("Configuration error: the latitude, longitude or scane are not fully defined");
         }
         double nmiles = scale * map_size * 1.60934 / 1.852;
         lat1=lat_c - (nmiles / 2 / 60 );
@@ -440,13 +471,13 @@ void load_profile(std::istream &in)
         lon1=lon_c - diff;
         lon2=lon_c + diff;
         if(lon1 < -180 || 180 < lon2)
-            throw std::runtime_error("The terrain must not pass E180/W180 meridian");
+            throw std::runtime_error("Configuration error: the terrain must not pass E180/W180 meridian");
         if(lat1 < -60 || 90 < lat2 )
-            throw std::runtime_error("The latitude should be below N90 and above S60");
+            throw std::runtime_error("Configuration error: the latitude should be below N90 and above S60");
             
     }
     if(db_type.rows == 0) {
-        throw std::runtime_error("Undefined dem - should be one of srtm30, srtm3, gtopo30");
+        throw std::runtime_error("Configuration error: undefined dem - should be one of srtm30, srtm3, gtopo30");
     }
     if(!dem_prefix.empty()) {
         db_type.directory = dem_prefix;
@@ -486,10 +517,7 @@ void resample_type()
 void write_reference_bmp()
 {
     std::string fname = output_dir + "/ground_coverage.bmp";
-    FILE *f=fopen(fname.c_str(),"wb");
-    if(!f)  {
-        throw std::runtime_error("Failed to open file " + fname);
-    }
+    outfile f(fname);
     int rows = types.size();
     int cols = types[0].size();
     bmp::header hdr(rows,cols);
@@ -501,14 +529,12 @@ void write_reference_bmp()
         c->b = map_in[i][3];
     }
 
-    fwrite(&hdr,sizeof(hdr),1,f);
+    f.write(&hdr,sizeof(hdr));
     
     for(int i=types.size()-1;i>=0;i--) {
-        safe_write(&types[i][0],types[i].size(),f,fname);
+        f.write(&types[i][0],types[i].size());
     }
-    if(fclose(f)!=0) {
-        throw std::runtime_error("Failed to save file " +fname);
-    }
+    f.close();
 }
 
 void recolor()
@@ -524,29 +550,25 @@ void recolor()
 void write_gndtype()
 {
     std::string fname = output_dir + "/gndtype.bmp";
-    FILE *f=fopen(fname.c_str(),"wb");
-    if(!f)  {
-        throw std::runtime_error("Failed to open file " + fname);
-    }
+    outfile f(fname);
     int rows = types.size();
     int cols = types[0].size();
     bmp::header hdr(4096,4096);
-    fwrite(&hdr,sizeof(hdr),1,f);
+    f.write(&hdr,sizeof(hdr));
     
     int padding = (4096 - rows)/2;
     
     std::vector<unsigned char> zeros(4096,0);
     for(int i=0;i<padding;i++)
-        safe_write(&zeros[0],zeros.size(),f,fname);
+        f.write(&zeros[0],zeros.size());
     for(int i=rows-1;i>=0;i--) {
-        safe_write(&zeros[0],padding,f,fname);
-        safe_write(&types[i][0],cols,f,fname);
-        safe_write(&zeros[0],padding,f,fname);
+        f.write(&zeros[0],padding);
+        f.write(&types[i][0],cols);
+        f.write(&zeros[0],padding);
     }
     for(int i=0;i<padding;i++)
-        safe_write(&zeros[0],zeros.size(),f,fname);
-    if(fclose(f)!=0) 
-        throw std::runtime_error("Failed to close " + fname);
+        f.write(&zeros[0],zeros.size());
+    f.close();
 }
 
 unsigned altitude_to_bmp(std::string file,std::vector<std::vector<uint16_t> > const &elev)
@@ -559,12 +581,9 @@ unsigned altitude_to_bmp(std::string file,std::vector<std::vector<uint16_t> > co
                 max = elev[i][j];
         }
     }
-    FILE *f=fopen(file.c_str(),"wb");
-    if(!f) {
-        throw std::runtime_error("Failed to open " + file);
-    }
+    outfile f(file);
     bmp::header hdr(1024,1024);
-    fwrite(&hdr,sizeof(hdr),1,f);
+    f.write(&hdr,sizeof(hdr));
     std::vector<uint8_t> row(matrix_size,0);
     std::vector<uint8_t> zeros(1024,0);
     unsigned div = max;
@@ -572,82 +591,84 @@ unsigned altitude_to_bmp(std::string file,std::vector<std::vector<uint16_t> > co
         div = 1;
     int padding = (1024 - matrix_size)/2;
     for(int i=0;i<padding;i++)
-        safe_write(&zeros[0],1024,f,file);
+        f.write(&zeros[0],1024);
     for(int i=matrix_size-1;i>=0;i--) {
         for(int j=0;j<matrix_size;j++) {
             row[j] = elev[i][j] * 255u / div;
         }
-        safe_write(&zeros[0],padding,f,file);
-        if(fwrite(&row[0],1,matrix_size,f)!=size_t(matrix_size)) {
-            fclose(f);
-            throw std::runtime_error("Failed to write file to disk " + file);
-        }
-        safe_write(&zeros[0],padding,f,file);
+        f.write(&zeros[0],padding);
+        f.write(&row[0],matrix_size);
+        f.write(&zeros[0],padding);
     }
     for(int i=0;i<padding;i++)
-        safe_write(&zeros[0],1024,f,file);
-    if(fclose(f)!=0) {
-        throw std::runtime_error("Failed to close file " + file);
-    }
+        f.write(&zeros[0],1024);
+    f.close();
     return max;
 }
 
 void save_elevations_file()
 {
     std::string elev_file = output_dir +"/" + map_name + ".elv";
-    FILE *f=fopen(elev_file.c_str(),"wb");
-    if(!f) {
-        throw std::runtime_error("Failed to open " + elev_file);
-    }
+    outfile f(elev_file);
     int matrix_size = map_size * 2;
     int padding = (1024 - matrix_size) / 2;
     std::vector<uint16_t> zero_row(1024,0);
     for(int i=0;i<padding;i++) {
-        safe_write(&zero_row[0],2*1024,f,elev_file);
+        f.write(&zero_row[0],2*1024);
     }
     for(int i=matrix_size-1;i>=0;i--) {
-        safe_write(&zero_row[0],2*padding,f,elev_file);
-        safe_write(&elevations[i][0],2*matrix_size,f,elev_file);
-        safe_write(&zero_row[0],2*padding,f,elev_file);
+        f.write(&zero_row[0],2*padding);
+        f.write(&elevations[i][0],2*matrix_size);
+        f.write(&zero_row[0],2*padding);
     }
     for(int i=0;i<padding;i++) {
-        safe_write(&zero_row[0],2*1024,f,elev_file);
+        f.write(&zero_row[0],2*1024);
     }
-    if(fclose(f)!=0) {
-        throw std::runtime_error("Failed to close " + elev_file);
-    }
+    f.close();
 }
 
 
 void update_gndtype(water_generator &gen)
 {
     int gnd_size = map_size * 8;
+    assert(gen.water_types.size()==size_t(gnd_size));
+    
     for(int r=0;r<gnd_size;r++) {
         for(int c=0;c<gnd_size;c++) {
-            bool has_water = false;
             bool has_land = false;
-            for(int dr = 0;dr<4;dr++) {
-                for(int dc=0;dc<4;dc++) {
-                    int v;
-                    int water_r = r*4+dr;
-                    int water_c = c*4+dc;
-                    v = gen.pixel(water_r,water_c);
-                    if(v == water_generator::land_mark)
-                        has_land=true;
-                    else 
-                        has_water=true;
+            bool has_water = false;
+            bool has_depth = false;
+            int dominant_type = -1;
+            unsigned type = gen.water_types[r][c];
+            if(type & 1u<<(water_generator::land_mark*2)) {
+                has_land = true;
+            }
+            int codes[3] = { water_generator::sea_mark, water_generator::lake_mark, water_generator::river_mark };
+            for(int i=0;i<3;i++) {
+                int code = codes[i];
+                if(type & 0x3u <<(code*2)) {
+                    has_water = true;
+                    if(dominant_type == -1)
+                        dominant_type = codes[i];
+                    if(type & 0x2u << (code*2))  {
+                        has_depth = true;
+                        break;
+                    }
                 }
             }
             int current_type = types[r][c];
-            if(has_water && has_land) {
-                types[r][c] = mixed_ground_type;
+            if(has_land && !has_water) {
+                if(current_type == 0)
+                    current_type = beach_type;
             }
-            else if(has_water && current_type!=0) {
-                types[r][c] = 0; // water
+            else if(has_water && !has_land && !has_depth) {
+                current_type = 0;
             }
-            else if(has_land && current_type == 0) {
-                types[r][c] = beach_type; // 0x11; // grass?
+            else if(has_water && (has_land || has_depth)) {
+                assert(dominant_type!=-1);
+                current_type = ground_types[dominant_type];
             }
+            types[r][c]=current_type;
         }
     }
 }
@@ -1008,11 +1029,8 @@ void make_clipboard_map(int max_elev)
     bmp::header h(tsize,tsize);
     make_map_color_index(h);
     std::string map_file = output_dir +"/" + map_name + ".bmp";
-    FILE *f = fopen(map_file.c_str(),"wb");
-    if(!f) {
-        throw std::runtime_error("Failed to open " + map_file);
-    }
-    fwrite(&h,sizeof(h),1,f);
+    outfile f(map_file);
+    f.write(&h,sizeof(h));
     int factor_type = map_size * 8;
     int factor_elev = map_size * 2;
     int elev_size = map_size * 2;
@@ -1034,9 +1052,9 @@ void make_clipboard_map(int max_elev)
                 double emboss = (e[1]-e[0]) * 5;
                 colors[c] = get_color_from_type(type,emboss);
         }
-        fwrite(&colors[0],1,tsize,f);
+        f.write(&colors[0],tsize);
     }
-    fclose(f);
+    f.close();
 }
 
 int get_elevation_from_table(double lat,double lon,std::vector<std::vector<uint16_t> > const &el)
@@ -1131,7 +1149,7 @@ void pass_one()
         river_mark_callback cb = { &river_elevations, &ignore_set, river_correction_limit };
         {
             water_generator::callback_guard guard(cb,gen);
-            river_properties rv = rv_prop;
+            water_properties rv = rv_prop;
             rv.start_points = ignore_set;
             gen.load_rivers(rivers,rv);
         }
@@ -1156,17 +1174,15 @@ void pass_one()
 int main(int argc,char **argv)
 {
     try {
-        std::string file_name = "config.ini";
-        if(argc == 2)  {
+        std::string file_name;
+        if(argc == 1)
+            file_name = "config.ini";
+        else if(argc == 2)  
             file_name = argv[1];
-        }
-        std::ifstream cfg(file_name.c_str());
-        if(!cfg) {
-            throw std::runtime_error("Failed to open file " + file_name);
-        }
-        load_profile(cfg);
-        cfg.close();
+        else
+            throw std::runtime_error("Usage makeahmap [ /path/to/config.ini ]");
 
+        load_profile(file_name);
        
         std::cout << "- Latitude and longitude range " << std::endl;
         std::cout << std::setprecision(3) << std::fixed;
@@ -1204,11 +1220,11 @@ int main(int argc,char **argv)
         }
         
         std::cout << "- Generating waterd.bmp... " << std::flush;
-        gen.save_waterd_map(output_dir + "/waterd.bmp",depth_dist);
+        gen.save_waterd_map(output_dir + "/waterd.bmp",rv_prop);
         std::cout << "Done" << std::endl;
         
         std::cout << "- Generating waterc.bmp... " << std::flush;
-        gen.save_waterc_map(output_dir + "/waterc.bmp",lake_water_color,river_water_color,land_water_color);
+        gen.save_waterc_map(output_dir + "/waterc.bmp",rv_prop);
         std::cout << "Done" << std::endl;
 
         std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;
