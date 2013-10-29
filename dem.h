@@ -29,6 +29,7 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include "downloader.h"
 
 namespace dem {
     
@@ -43,6 +44,7 @@ namespace dem {
         bool latitude_first;
         std::string directory;
         std::string suffix;
+        std::string code;
     };
 
     class tile {
@@ -88,7 +90,7 @@ namespace dem {
             
             if(f_) {
                 if(!f_.read(&new_row[0],real_cols_ * 2)) {
-                    throw std::runtime_error("Failed to read data - unexpected EOF" +get_name(file_id));
+                    throw std::runtime_error("Failed to read data - unexpected EOF " +get_name(file_id));
                 }
                 for(int i=0;i<real_cols_;i++) {
                     uint16_t a=new_row[i];
@@ -140,7 +142,8 @@ namespace dem {
             s_lat << lat_d << std::setw(2) << std::setfill('0') << lat;
             s_lon << lon_d << std::setw(3) << std::setfill('0') << lon;
 
-            std::string file_name = d->directory + "/";
+            std::string file_name;
+            
             if(d->latitude_first) {
                 file_name += s_lat.str();
                 file_name += s_lon.str();
@@ -160,7 +163,12 @@ namespace dem {
             f_.close();
            
             std::string file_name = get_name(file_id); 
-            f_.open(file_name,!d->may_be_missing);
+            std::string full_name = d->directory + "/" + file_name;
+            if(!downloader::manager().instance().check(full_name,d->code + "/" + file_name,!d->may_be_missing)) {
+                current_pos_=0;
+                return;
+            }
+            f_.open(full_name);
             if(!f_) {
                 std::cout << "   file " <<  file_name << " missing... is it water area?" << std::endl;
             }
@@ -243,6 +251,7 @@ namespace dem {
         p.top_left = false;
         p.directory = "./data/srtm3";
         p.suffix = ".hgt";
+        p.code = "srtm3";
         return p;
     }
 
@@ -264,12 +273,14 @@ namespace dem {
     {
         db_properties p=dem_30();
         p.directory="./data/srtm30";
+        p.code = "srtm30";
         return p;
     }
     inline db_properties gtopo30()
     {
         db_properties p=dem_30();
         p.directory="./data/gtopo30";
+        p.code = "gtopo30";
         return p;
     }
 }

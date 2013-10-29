@@ -39,8 +39,8 @@
 #include <set>
 #include "bmp.h"
 #include "gshhs.h"
-
 #include "dem.h"
+#include "downloader.h"
 
 
 std::vector<std::vector<uint16_t> > elevations;
@@ -65,11 +65,14 @@ double river_east_shift = 0.0;
 bool fix_river_slopes = true;
 
 std::string map_name = "map";
-std::string tiff_file="./data/globcover/GLOBCOVER_L4_200901_200912_V2.3.tif";
+std::string tiff_file="./data/globcover/globcover.tif";
 std::string shores = "./data/gshhs/gshhs_f.b";
 std::string rivers = "./data/gshhs/wdb_rivers_f.b";
 std::string custom_mapping;
 std::string output_dir = "./output";
+std::string download_sources = "download_sources.txt";
+std::string temp_dir = "./temp";
+bool auto_download_enabled = true;
 char const *real_file=0;
 char const *color_file=0;
 
@@ -336,6 +339,20 @@ void load_profile(std::string file_name)
             }
             else if(key == "rivers") {
                 rivers = value;
+            }
+            else if(key == "download_sources") {
+                download_sources = value;
+            }
+            else if(key == "download") {
+                if(value == "yes")
+                    auto_download_enabled = true;
+                else if(value == "no")
+                    auto_download_enabled = false;
+                else
+                    throw parsing_error("Key download need values yes or no");
+            }
+            else if(key == "temporary_dir") {
+                temp_dir = value;
             }
             else if(key == "fix_river_slopes") {
                 if(value == "yes")
@@ -686,6 +703,7 @@ int col_from_lon(double lon,int width)
 void load_globcover_data()
 {
     TIFFSetWarningHandler(0);
+    downloader::manager::instance().check(tiff_file,"globcover");
     TIFF *in = TIFFOpen(tiff_file.c_str(),"r");
     if(!in) 
         throw std::runtime_error("Failed to open file " + tiff_file);
@@ -1183,6 +1201,8 @@ int main(int argc,char **argv)
             throw std::runtime_error("Usage makeahmap [ /path/to/config.ini ]");
 
         load_profile(file_name);
+
+        downloader::manager::instance().init(download_sources,temp_dir,auto_download_enabled);
        
         std::cout << "- Latitude and longitude range " << std::endl;
         std::cout << std::setprecision(3) << std::fixed;
@@ -1191,16 +1211,13 @@ int main(int argc,char **argv)
         
         load_custom_type_mapping();
 
-        std::cout << "- Loading GlobCover Data... " << std::flush;
+        std::cout << "- Loading GlobCover Data. " << std::endl;
         load_globcover_data();
         resample_type();
-        std::cout << "Done" << 
-        std::endl;    
  
-        std::cout << "- Loading Digital Elevations Model data... " << std::endl;
+        std::cout << "- Loading Digital Elevations Model data. " << std::endl;
         std::vector<std::vector<uint16_t> > tmp=dem::read(db_type,map_size*2,lat1,lat2,lon1,lon2);
         elevations.swap(tmp);
-        std::cout << "  DEM is ready" << std::endl;
         
         std::set<int> ignore_set;
         
@@ -1208,9 +1225,8 @@ int main(int argc,char **argv)
             pass_one();
                 
         water_generator gen(lat1,lat2,lon1,lon2,map_size * 32);
-        std::cout << "- Loading & processing shores data... " << std::flush;
+        std::cout << "- Loading & processing shores data. " << std::endl;
         gen.load_land(shores);
-        std::cout << "Done" << std::endl;
         
         if(rv_prop.max_level != 0) {
             std::cout << "- Loading & processing rivers data... " << std::endl;

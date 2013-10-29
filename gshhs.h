@@ -24,6 +24,7 @@
 
 #include "bmp.h"
 #include "fileio.h"
+#include "downloader.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -630,6 +631,7 @@ private:
 	
 	void open(std::string file_name)
 	{
+        downloader::manager::instance().check(file_name,"gshhs");
 		f.open(file_name);
 	}
 	void close()

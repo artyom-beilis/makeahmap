@@ -8,6 +8,7 @@ Bug fixes:
 
 New features:
 
+- Added support of fully automatic data download
 - Improved config.ini syntax and error reporting
 - Improved error reporting in case of problems with file access
 - Added support of custom gndtype for the areas were water and land are mixed or not ocean depth water exits
