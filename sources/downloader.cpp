@@ -339,8 +339,9 @@ namespace downloader {
         int count=0;
         while(std::getline(in,line)) {
             count++;
-            if(line.empty() || line[0]=='#')
+            if(line.empty() || line[0]=='#' || line.find_first_not_of(" \t\r\n")==std::string::npos)
                 continue;
+            
             std::istringstream ss(line);
 
             std::ostringstream errline;
