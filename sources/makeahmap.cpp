@@ -42,7 +42,6 @@
 #include "dem.h"
 #include "downloader.h"
 
-
 std::vector<std::vector<uint16_t> > elevations;
 int map_size = 512;
 int river_correction_limit = -1;
@@ -68,6 +67,7 @@ std::string map_name = "map";
 std::string tiff_file="./data/globcover/globcover.tif";
 std::string shores = "./data/gshhs/gshhs_f.b";
 std::string rivers = "./data/gshhs/wdb_rivers_f.b";
+std::string grid_dir = "./images";
 std::string custom_mapping;
 std::string output_dir = "./output";
 std::string download_sources = "download_sources.txt";
@@ -75,6 +75,90 @@ std::string temp_dir = "./temp";
 bool auto_download_enabled = true;
 char const *real_file=0;
 char const *color_file=0;
+enum altitude_handling_type {
+    shade_hills,
+    dark_hills,
+    untouched_hills
+} altitude_handling = shade_hills;
+double shading_factor = 1.0;
+double map_scale;
+
+class parsing_error : public std::runtime_error {
+public:
+    parsing_error(std::string const &v) : std::runtime_error(v) {}
+};
+
+
+class color {
+public:
+    unsigned char r,g,b;
+    color(int ir=0,int ig=0,int ib=0) : r(ir), g(ig), b(ib) {}
+    color(std::string const &color) :r(0),g(0),b(0)
+    {
+        bool ok=false;
+        do {
+            if(color.empty())
+                break;
+            if(color[0]=='h') {
+                if(color.size()==4) {
+                    r=from_hex(color[1])*17;
+                    g=from_hex(color[2])*17;
+                    b=from_hex(color[3])*17;
+                    ok=true;
+                }
+                else if(color.size()==7) {
+                    r=from_hex(color[1])*16+from_hex(color[2]);
+                    g=from_hex(color[3])*16+from_hex(color[4]);
+                    b=from_hex(color[5])*16+from_hex(color[6]);
+                    ok=true;
+                }
+                else 
+                    break;
+            }
+            else if(color[0]=='(' && color.back()==')') {
+                size_t p1=color.find_first_of(',');
+                if(p1==std::string::npos) 
+                    break;
+                size_t p2=color.find_first_of(',',p1+1);
+                if(p2==std::string::npos)
+                    break;
+                std::string sr=color.substr(1,p1-1);
+                std::string sg=color.substr(p1+1,p2-(p1+1));
+                std::string sb=color.substr(p2+1,color.size()-1-(p2+1));
+                r=atoi(sr.c_str());
+                g=atoi(sg.c_str());
+                b=atoi(sb.c_str());
+                ok=true;
+            }
+        } while(0);
+        if(!ok)
+            throw parsing_error("Invalid color specification `"+color+"'");
+    }
+private:
+    static int from_hex(char c)
+    {
+        if('0' <= c && c<= '9')
+            return c-'0';
+        if('a' <= c && c<= 'f')
+            return c-'a'+10;
+        if('A' <= c && c<= 'F')
+            return c-'A'+10;
+        throw parsing_error(std::string("Invalid hexadecimal digit `") + c + "'" );
+    }
+};
+
+color map_colors[5] = {
+        color( 178, 210, 174 ), //   0- 49 - farm 
+        color( 165, 200, 163 ), //  50- 99 - forest
+        color( 220, 220, 240 ), // 100-149 - snow
+        color( 216, 225, 185 ), // 150-199 - grass, grocky grass, sandy grass, swamp
+        color( 246, 241, 220 )  // 200-249 - beach, river bad, rock
+};
+
+color water_color(167,201,253);
+color beach_color(125,151,190);
+color grid_color(140,140,140); 
+
 
 
 // tiles
@@ -194,11 +278,6 @@ void load_custom_type_mapping()
         map_type[gcover]=ah;
     }
 }
-
-class parsing_error : public std::runtime_error {
-public:
-    parsing_error(std::string const &v) : std::runtime_error(v) {}
-};
 
 bool parse(std::string const &in,std::string &key,std::string &value,std::string &index)
 {
@@ -423,6 +502,40 @@ void load_profile(std::string file_name)
             else if(key == "output_dir") {
                 output_dir = value;
             }
+            else if(key == "elevation_marking") {
+                if(value == "shade")
+                    altitude_handling = shade_hills;
+                else if(value == "dark")
+                    altitude_handling = dark_hills;
+                else if(value == "disable")
+                    altitude_handling = untouched_hills;
+                else
+                    throw parsing_error("elevation_marking should be one of shade, dark, disable");
+            }
+            else if(key == "elevation_shading_factor") {
+                shading_factor = atof(value.c_str());
+            }
+            else if(key == "map_color[]") {
+                color c(value);
+                if(index=="beach")
+                    beach_color=c;
+                else if(index=="water")
+                    water_color=c;
+                else if(index=="grid")
+                    grid_color=c;
+                else if(index=="farm")
+                    map_colors[0]=c;
+                else if(index=="forest")
+                    map_colors[1]=c;
+                else if(index=="snow")
+                    map_colors[2]=c;
+                else if(index=="grass")
+                    map_colors[3]=c;
+                else if(index=="desert")
+                    map_colors[4]=c;
+                else
+                    throw parsing_error("Invalid map_color[] index `" + index + "'");
+            }
             else if(key == "lat1" || key == "lat2" || key=="lat") {
                 double v = atof(value.c_str());
                 if(!(-60 < v && v < 90))
@@ -476,11 +589,14 @@ void load_profile(std::string file_name)
         }
         lat_c = (lat1+lat2)/2;
         lon_c = (lon1+lon2)/2;
+        double dist_miles = (std::max(lat1,lat2)-std::min(lat1,lat2)) * 1.852 * 60 / 1.60934;
+        map_scale = dist_miles / map_size;
     }
     else { // via scale
         if(lat_c == -1000 || lon_c == -1000 || scale == -1) {
             throw std::runtime_error("Configuration error: the latitude, longitude or scane are not fully defined");
         }
+        map_scale = scale;
         double nmiles = scale * map_size * 1.60934 / 1.852;
         lat1=lat_c - (nmiles / 2 / 60 );
         lat2=lat_c + (nmiles / 2 / 60 );
@@ -944,39 +1060,40 @@ void fix_sea_elevations(water_generator &gen)
 
 void make_map_color_index(bmp::header &hdr)
 {
-    // 200-249 - beach, river bad, rock
-    // 150-199 - grass, grocky grass, sandy grass, swamp
-    // 100-149 - snow
-    //  50- 99 - forest
-    //   0- 49 - farm 
-    int colors[5][3] = {
-        { 192, 192, 192 },
-        { 192, 192, 192 },
-        { 192, 192, 192 },
-        { 192, 192, 192 },
-        { 192, 192, 192 },
-        //{ 90, 206, 59 },
-        //{ 216, 186, 62 },
-        //{ 192, 192, 192 },
-        //{ 74, 255, 150 },
-        //{ 255, 210, 76 }
-    };
+    
     for(int c=0;c<5;c++) {
         for(int i=0;i<50;i++) {
-            double f=0.5 + i / 100.0;
+            double f=i/50.0 + 0.5;
             bmp::rgbq *p = &hdr.ih.colors[c*50 + i ];
-            p->r = int(floor(colors[c][0] * f));
-            p->g = int(floor(colors[c][1] * f));
-            p->b = int(floor(colors[c][2] * f));
+            p->r = std::min(std::max(0,int(floor(map_colors[c].r * f))),255);
+            p->g = std::min(std::max(0,int(floor(map_colors[c].g * f))),255);
+            p->b = std::min(std::max(0,int(floor(map_colors[c].b * f))),255);
         }
     }
-    bmp::rgbq *p = &hdr.ih.colors[255];
-    p->r=40;
-    p->g=44;
-    p->b=191;
+    // water
+    {
+        bmp::rgbq *p = &hdr.ih.colors[255];
+        p->r=water_color.r;
+        p->g=water_color.g;
+        p->b=water_color.b;
+    }
+    // beach
+    {
+        bmp::rgbq *p = &hdr.ih.colors[254];
+        p->r=beach_color.r;
+        p->g=beach_color.g;
+        p->b=beach_color.b;
+    }
+    // grid
+    {
+        bmp::rgbq *p = &hdr.ih.colors[253];
+        p->r=grid_color.r;
+        p->g=grid_color.g;
+        p->b=grid_color.b;
+    }
 }
 
-int get_color_from_type(int type,double emboss)
+int get_color_from_type(int type,double brightness_factor)
 {
     // ntt0000  Deep water ntt0000 will always be deep water  (This is a greyscale BMP designed to vary the water over distances)
     // ntt0001  Grass
@@ -995,7 +1112,7 @@ int get_color_from_type(int type,double emboss)
     // 255 - water
     // 254 - beach
     // 253 - grid line
-    // 252 - grid text
+    // 252 - TBD
     // 251 - TBD
     // 250 - TBD
     // 200-249 - beach, river bad, rock
@@ -1008,67 +1125,167 @@ int get_color_from_type(int type,double emboss)
     switch(type & 0xF) {
     case 4:
     case 5:
-        basic = 0;
+        basic = 0; // farm1,2
         break;
     case 2:
     case 3:
-        basic = 1;
+        basic = 1; // forest1,2 
+        break;
+    case 12:
+        basic = 2; // snow
         break;
     case 1:
     case 7:
     case 8:
     case 9:
-        basic = 2;
+        basic = 3; // grass, grocky grass, sandy grass, swamp
         break;
     case 6:
     case 10:
     case 11:
-        basic = 3;
-        break;
-    case 12:
-        basic = 4;
+        basic = 4; // beach, river bad, rock
         break;
     case 0:
         return 255;
     default:
         throw std::runtime_error("Internal error invalid ground type");
     }
-    if(emboss < -1.0)
-        emboss = -1.0;
-    else if(emboss > 1.0)
-        emboss = 1.0;
-    int color = int(floor((emboss + 1.0) / 2 * 49)) + 50 * basic;
+    int brightness=std::max(0,std::min(49,int(round(brightness_factor*49))));
+    int color = 50 * basic + brightness;
     return color;
 }
 
-void make_clipboard_map(int max_elev)
+double get_scaled_elevation(double r,double c)
+{
+    int size = map_size * 2;
+    r*=size;
+    c*=size;
+    int rl = std::max(0,std::min(int(floor(r)),size-1));
+    int cl = std::max(0,std::min(int(floor(c)),size-1));
+    int rh = std::min(rl+1,size-1);
+    int ch = std::min(cl+1,size-1);
+    if(r < rl)
+        r=rl;
+    if(c < cl)
+        c=cl;
+    double rwh = r - rl;
+    double cwh = c - cl;
+    double rwl = 1-rwh;
+    double cwl = 1-cwh;
+    double elev =   rwl*(cwl*elevations[rl][cl] + cwh * elevations[rl][ch]) 
+                  + rwh*(cwl*elevations[rh][cl] + cwh * elevations[rh][ch]);
+    return elev;
+}
+
+std::vector<std::vector<bool> > load_grid(size_t tsize)
+{
+    std::ostringstream ss;
+    ss << grid_dir << "/grid_" << tsize <<"x"<<tsize<<"px_" << map_size<<"miles.tif";
+    std::string file_name = ss.str();
+    std::vector<std::vector<bool> > grid(tsize,std::vector<bool>(tsize,false));
+    TIFF *in = 0;
+    try {
+        std::vector<unsigned char> buf(tsize);
+        in = TIFFOpen(file_name.c_str(),"r");
+        if(!in) {
+            throw std::runtime_error("Failed to open file " + file_name);
+        }
+        uint32 imw,imh;
+        TIFFGetField(in, TIFFTAG_IMAGELENGTH, &imh);
+        TIFFGetField(in, TIFFTAG_IMAGEWIDTH, &imw);
+        size_t len = TIFFScanlineSize(in);
+        if(imw != tsize || imh!=tsize || len!=tsize)
+            throw std::runtime_error("Invalid tiff format for " + file_name);
+        for(unsigned i=0;i<tsize;i++) {
+            TIFFReadScanline(in,&buf[0],i);
+            for(unsigned j=0;j<tsize;j++) {
+                bool is_grid = buf[j]<128;
+                grid[i][j]=is_grid;
+            }
+        }
+        TIFFClose(in);
+        in=0;
+    }
+    catch(...) {
+        if(in)
+                TIFFClose(in);
+        throw;
+    }
+    return grid;
+}
+
+void make_clipboard_map(int max_elev,water_generator &gen)
 {
     int tsize = 1024;
+    std::vector<std::vector<bool> > grid = load_grid(tsize);
     bmp::header h(tsize,tsize);
     make_map_color_index(h);
     std::string map_file = output_dir +"/" + map_name + ".bmp";
     outfile f(map_file);
     f.write(&h,sizeof(h));
     int factor_type = map_size * 8;
-    int factor_elev = map_size * 2;
-    int elev_size = map_size * 2;
     for(int r=tsize-1;r>=0;r--) {
         std::vector<unsigned char> colors(tsize);
+        int water_mask = (1u << (water_generator::sea_mark*2))
+                         | (1u << (water_generator::lake_mark*2))
+                         | (1u << (water_generator::river_mark*2));
+        int land_mask = 1u << (water_generator::land_mark * 2);
         for(int c=0;c<tsize;c++) {
+                if(grid[r][c]) {
+                    colors[c]=253; // grid;
+                    continue;
+                }
                 int t_r = factor_type * r / tsize;
                 int t_c = factor_type * c / tsize;
                 int type = types.at(t_r).at(t_c);
-                
-                int e_r = factor_elev * r / tsize;
-                int e_c = factor_elev * c / tsize;
-                double e[2] = {0,0};
-                for(int d=-1,p=0;d<=1;d+=2,p++) {
-                    if(e_r + d < 0 || e_r + d >= elev_size || e_c + d < 0 || e_c+d >= elev_size)
-                        continue;
-                    e[p]=double(elevations[e_r+d][e_c+d])/max_elev;
+                int t_r_e = std::min(factor_type * (r+1) / tsize,factor_type);
+                int t_c_e = std::min(factor_type * (c+1) / tsize,factor_type);
+
+                bool has_water=false;
+                bool has_ground=false;
+
+                for(int wr=t_r;wr<t_r_e;wr++) {
+                    for(int wc=t_c;wc<t_c_e;wc++) {
+                        int mark = gen.water_types[wr][wc];
+                        if(mark & water_mask) {
+                            has_water=true;
+                        }
+                        if(mark & land_mask) {
+                            has_ground=true;
+                        }
+                    }
                 }
-                double emboss = (e[1]-e[0]) * 5;
-                colors[c] = get_color_from_type(type,emboss);
+                int color;
+                if(has_water && has_ground) {
+                    color=254; // beach
+                }
+                else if(has_water) {
+                    color=255; // water
+                }
+                else {
+                    
+                    double brightness = 0.5;
+                    if(altitude_handling == shade_hills) {
+                        double e_r_1 = double(r-1) / tsize;
+                        double e_c_1 = double(c-1) / tsize;
+                        double e_r_2 = double(r+1) / tsize;
+                        double e_c_2 = double(c+1) / tsize;
+                        double e_1=get_scaled_elevation(e_r_1,e_c_1);
+                        double e_2=get_scaled_elevation(e_r_2,e_c_2);
+                        double emboss = (e_2-e_1) * 2.0 * shading_factor / map_scale / max_elev;
+                        brightness=std::max(0.0,std::min(1.0,(0.5+emboss)));
+                    }
+                    else if(altitude_handling == dark_hills) {
+                        double relative_altitude = get_scaled_elevation(double(r)/tsize,double(c)/tsize) / max_elev;
+                        brightness = 0.5 * (1.0 - 0.6 * shading_factor * relative_altitude);
+                        if(brightness < 0.0)
+                            brightness = 0.0;
+                    }
+                    
+                    brightness=std::max(0.0,std::min(1.0,brightness));
+                    color = get_color_from_type(type,brightness);
+                }
+                colors[c]=color;
         }
         f.write(&colors[0],tsize);
     }
@@ -1204,10 +1421,11 @@ int main(int argc,char **argv)
 
         downloader::manager::instance().init(download_sources,temp_dir,auto_download_enabled);
        
-        std::cout << "- Latitude and longitude range " << std::endl;
+        std::cout << "- Latitude, longitude range and scale" << std::endl;
         std::cout << std::setprecision(3) << std::fixed;
         std::cout << "    Lat: " << std::setw(10) << lat1 << ' ' << std::setw(10) << lat2 << std::endl;
         std::cout << "    Lon: " << std::setw(10) << lon1 << ' ' << std::setw(10) << lon2 << std::endl;
+        std::cout << "  Scale: " << std::setw(10) << map_scale << std::endl;
         
         load_custom_type_mapping();
 
@@ -1270,7 +1488,7 @@ int main(int argc,char **argv)
         std::cout << "-- Maximal altitude (for use with TE bmp import) is " << max_alt << " feet" << std::endl;
         
         std::cout << "- Generating clibboard map... " << std::flush;
-        make_clipboard_map(max_alt);
+        make_clipboard_map(max_alt,gen);
         std::cout << "Done" << std::endl;
         
         std::cout << "\n\nCompleted\n";
