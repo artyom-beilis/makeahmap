@@ -9,4 +9,4 @@ Limitations:
 3. There is known problem of slight misalignment of the rivers and shores.
    You can try to use river_north_shift/river_east_shift options to
    amge global corrections and it is good idea to check the rivers
-'  ends before you start working on terrain objects.
+   ends before you start working on terrain objects.

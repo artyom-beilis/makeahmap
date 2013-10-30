@@ -123,7 +123,11 @@ namespace downloader {
                 char slen[13]={0};
                 strncpy(slen,buf+124,12);
                 long long len = 0,padded_len;
+                #if defined(WIN32) || defined(_WIN32)
+                sscanf(slen,"%I64o",&len);
+                #else
                 sscanf(slen,"%llo",&len);
+                #endif
                 padded_len = (len + block_size -1 )/block_size*block_size;
                 if(strncmp(buf,file_name.c_str(),100)==0) {
                     out = gzopen(part_out.c_str(),"wb");

@@ -21,15 +21,31 @@ gndtype.bmp  - ground covering
 waterd.bmp - import water bmp file (depth)
 waterc.bmp - import water bmp file (water color)
 
+Optional for TE:
+-----------------
+
 Additional Files
 ----------------
+mapname.bmp - clipboard map (not fully useful yet as lacks gread and finer colors)
 
 ground_coverage.bmp - the ground types distribution - colored as created from GLOBCOVER database.
 mapname_elevations.bmp - visaul representation of the elevation maps
-mapname.bmp - clipboard map (not fully useful yet as lacks greed and finer colors)
+water_altitude_correction.bmp - map of altered altitudes to cope with HTC water slope requirementd
+removed_rivers.bmp - removed river parts that required too agressing altitude corrections
 
 Required Data Sets
 ===================
+
+
++--------------------------------------------------------+
+|NOTE: Starting from version 0.5 the required files are  |
+|      downloaded automatically, no manual download      |
+|      is required.                                      |
+|                                                        |
+|      You can still download them manually for offline  |
+|      use                                               |
++--------------------------------------------------------+
+
 
 
 1.  Digital Elevation Database. Any of the 3 below: GTOPO30, SRTM30, SRTM3, no need for all of them:
@@ -105,7 +121,7 @@ Required Data Sets
     
     Put it under:
     
-        data/globcover/GLOBCOVER_L4_200901_200912_V2.3.color.tif 
+        data/globcover/globcover.tif 
         
     Or any other location, pointed by globcover_tiff_path config.ini option.
    
