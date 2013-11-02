@@ -4,6 +4,10 @@ Bug fixes:
 
 - Changed download_sources.txt line endings to CR/LF to make them more windows friendly
 
+New features:
+
+- Implemented automatic clipboard map generation
+
 2013-10-29: Version 0.5
 
 Bug fixes:

@@ -1,4 +1,3 @@
 My plans to add...
 
-1. Automatic clipboard map generation with colors and shading.
-2. Support of map generation that passes E180/W180 line - currently it does not support it (Does it needed?)
+1. Support of map generation that passes E180/W180 line - currently it does not support it (Does it needed?)
