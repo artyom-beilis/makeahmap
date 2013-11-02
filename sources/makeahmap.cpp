@@ -157,7 +157,7 @@ color map_colors[5] = {
 
 color water_color(167,201,253);
 color beach_color(125,151,190);
-color grid_color(140,140,140); 
+color grid_color(64,64,64); 
 
 
 
@@ -432,6 +432,9 @@ void load_profile(std::string file_name)
             }
             else if(key == "temporary_dir") {
                 temp_dir = value;
+            }
+            else if(key == "grid_dir") {
+                grid_dir = value;
             }
             else if(key == "fix_river_slopes") {
                 if(value == "yes")
