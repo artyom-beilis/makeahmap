@@ -8,8 +8,10 @@
 #
 # http://due.esrin.esa.int/globcover/
 #
+# Old one
+# globcover tiff - - http://due.esrin.esa.int/globcover/LandCover2009/GLOBCOVER_L4_200901_200912_V2.3.color.tif
 
-globcover tiff - - http://due.esrin.esa.int/globcover/LandCover2009/GLOBCOVER_L4_200901_200912_V2.3.color.tif
+globcover zip GLOBCOVER_L4_200901_200912_V2.3.tif->globcover.tif - http://due.esrin.esa.int/files/Globcover2009_V2.3_Global_.zip
 
 #
 # GSHHS
@@ -17,7 +19,7 @@ globcover tiff - - http://due.esrin.esa.int/globcover/LandCover2009/GLOBCOVER_L4
 # http://www.soest.hawaii.edu/pwessel/gshhg/
 #
 
-gshhs zip gshhs_f.b wdb_rivers_f.b ftp://ftp.soest.hawaii.edu/pwessel/gshhg/gshhg-bin-2.2.3.zip
+gshhs zip gshhs_f.b wdb_rivers_f.b https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/gshhg-bin-2.3.4.zip
 
 
 #

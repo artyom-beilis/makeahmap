@@ -171,7 +171,24 @@ namespace downloader {
             throw;
         }
     }
-    
+   
+    std::string manager::file_target(std::string file)
+    {
+        std::string target;
+        file_target(file,target);
+        return target;
+    }
+    void manager::file_target(std::string &file,std::string &target)
+    {
+        size_t pos;
+        if((pos=file.find("->"))!=std::string::npos) {
+            target = file.substr(pos+2);
+            file = file.substr(0,pos);
+        }
+        else {
+            target = file;
+        }
+    }
     void manager::unzip(std::string zip_file,std::string to_dir,std::string file1,std::string file2/*=std::string()*/)
     {
         std::string command = "unzip -qo \""+zip_file+"\" \"" + file1 + "\" ";
@@ -286,10 +303,10 @@ namespace downloader {
 
         std::string dir = dir_from_path(real_file_name);
         std::string expected = name_from_path(real_file_name);
-        if(expected != d.file && expected!=d.file_extra)
+        if(expected != file_target(d.file) && expected!=file_target(d.file_extra))
             throw std::runtime_error("Can't download file, internal error: expected name " 
                     + expected + " but actual file to download is " 
-                    + d.file + (d.file_extra.empty() ? std::string() : " or " + d.file_extra));
+                    + file_target(d.file) + (d.file_extra.empty() ? std::string() : " or " + file_target(d.file_extra)));
         
         std::string zip_file;
 
@@ -305,20 +322,41 @@ namespace downloader {
             break;
 
         case zip:
-            zip_file = temp_dir_ + "/tmp.zip";
-            download_file(d.url,zip_file);
-            std::cout<<std::endl;
-            std::cout<<"  - extracting... " <<std::flush; 
-            unzip(zip_file,temp_dir_,d.file,d.file_extra);
-            std::cout<<"complete\n  - compressing... " << std::flush;
-            gzip(temp_dir_ + "/" + d.file,dir + "/" + d.file);
-            if(!d.file_extra.empty())
-                gzip(temp_dir_ + "/" + d.file_extra,dir + "/" + d.file_extra);
-            remove(zip_file.c_str());
-            remove((temp_dir_ +"/" + d.file).c_str());
-            if(!d.file_extra.empty())
-                remove((temp_dir_ +"/" + d.file_extra).c_str());
-            std::cout<<"complete" << std::endl;
+            {
+                zip_file = temp_dir_ + "/tmp.zip";
+                download_file(d.url,zip_file);
+                std::cout<<std::endl;
+                std::cout<<"  - extracting... " <<std::flush; 
+                std::string tgt1,tgt2;
+                std::string src1=d.file;
+                std::string src2=d.file_extra;
+                file_target(src1,tgt1);
+                file_target(src2,tgt2);
+                unzip(zip_file,temp_dir_,src1,src2);
+                std::cout << "complete\n" << std::flush;
+                if(tgt1 == src1) {
+                    std::cout<<"  - compressing " << d.file << "..." << std::flush;
+                    gzip(temp_dir_ + "/" + d.file,dir + "/" + d.file);
+                    remove((temp_dir_ +"/" + d.file).c_str());
+                    std::cout<<"done" << std::endl;
+                }
+                else {
+                    rename((temp_dir_ + "/" + src1).c_str(),(dir + "/" + tgt1).c_str());
+                }
+                if(!d.file_extra.empty()) {
+                    if(tgt2 == src2) {
+                        std::cout<<"  - compressing " << d.file_extra << "..." << std::flush;
+                        gzip(temp_dir_ + "/" + d.file_extra,dir + "/" + d.file_extra);
+                        remove((temp_dir_ +"/" + d.file_extra).c_str());
+                        std::cout<<"done" << std::endl;
+                    }
+                    else {
+                        rename((temp_dir_ + "/" + src2).c_str(),(dir + "/" + tgt2).c_str());
+                    }
+                }
+                remove(zip_file.c_str());
+                std::cout<<"complete" << std::endl;
+            }
             break;
         default:
             ; // should not get there 
