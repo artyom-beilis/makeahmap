@@ -19,7 +19,7 @@ globcover zip GLOBCOVER_L4_200901_200912_V2.3.tif->globcover.tif - http://due.es
 # http://www.soest.hawaii.edu/pwessel/gshhg/
 #
 
-gshhs zip gshhs_f.b wdb_rivers_f.b https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/gshhg-bin-2.3.4.zip
+gshhs zip gshhs_f.b wdb_rivers_f.b http://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/gshhg-bin-2.3.4.zip
 
 
 #
