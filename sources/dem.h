@@ -186,15 +186,15 @@ namespace dem {
         fileio f_;
     };
 
-    std::vector<std::vector<uint16_t> > read(db_properties const &p,int points,double lat1,double lat2,double lon1,double lon2)
+    std::vector<std::vector<int16_t> > read(db_properties const &p,int points,double lat1,double lat2,double lon1,double lon2)
     {
         if(lat1 > lat2)
             std::swap(lat1,lat2);
         if(lon1 > lon2)
             std::swap(lon1,lon2);
-        std::vector<std::vector<uint16_t> > elevations;
+        std::vector<std::vector<int16_t> > elevations;
         
-        elevations.resize(points,std::vector<uint16_t>(points,0));
+        elevations.resize(points,std::vector<int16_t>(points,0));
 
         int tiles_no = 360 / p.longitude_step;
         std::vector<std::shared_ptr<tile> > tiles(tiles_no);

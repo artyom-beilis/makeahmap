@@ -40,7 +40,7 @@
 #include <functional>
 #include <assert.h>
 #include <map>
-
+#include <queue>
 
 struct water_properties {
     double lat_shift;
@@ -252,6 +252,71 @@ public:
 		}
 		close();
 	}
+    
+    void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope)
+    {
+        water_types.clear();
+        water_types.resize(water_size,std::vector<unsigned char>(water_size,0));
+        std::queue<int> review;
+        int pos;
+		for(int r=0;r<water_size;r++) {
+            pos = ((water_size - 1)- r)  * water_size;
+			for(int c=0;c<water_size;c++,pos++)  {
+                int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
+                int type_c = c;
+                int type_r = (water_size - 1 - r);
+                water_types[r][c] |= 1u << (type*2);
+                //if(type != land_mark && data[c]!=0)
+                //    water_types[type_r][type_c] |= 2u << (type*2);
+                //}
+                switch(type){
+                case sea_mark:
+                    elev[r][c] = -100;
+                    break;
+                case land_mark:
+                    break;
+                case lake_mark:
+                case river_mark:
+                    if(elev[r][c]!=0) {
+                        elev[r][c] = -100;
+                        review.push(pos);
+                    }
+                    break;
+                }
+			}
+		}
+        int max_fix = 0;
+        static const int horizontal_feet = 660;
+        int direct_feet_limit = static_cast<int>(slope * horizontal_feet);
+        int cross_feet_limit = static_cast<int>(slope * 1.41421 * horizontal_feet);
+        while(!review.empty()) {
+            int pos = review.front();
+            review.pop();
+            int c_r = pos / water_size;
+            int c_c = pos % water_size;
+            int alt = elev[c_r][c_c];
+            if(alt < 0)
+                alt = 0;
+            for(int dr = -1;dr<=1;dr++) {
+                for(int dc=-1;dc<=1;dc++) {
+                    if(dr==0 && dc==0)
+                        continue;
+                    int r=c_r + dr;
+                    int c=c_c + dc;
+                    if(r < 0 || r>=water_size || c< 0 || c>=water_size)
+                        continue;
+                    int limit = dr!=0 && dc!=0 ? cross_feet_limit : direct_feet_limit;
+                    if(elev[r][c] > alt + limit) {
+                        int diff = elev[r][c] - (alt + limit);
+                        max_fix = std::max(max_fix,diff);
+                        elev[r][c] = alt + limit;
+                        review.push(r * water_size + c);
+                    }
+                }
+            }
+        }
+        std::cout << "  Maximal correction is " << max_fix << std::endl;
+    }
 	
     void save_waterc_map(std::string out,water_properties const &prop)
 	{

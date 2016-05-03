@@ -42,7 +42,7 @@
 #include "dem.h"
 #include "downloader.h"
 
-std::vector<std::vector<uint16_t> > elevations;
+std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
 int river_correction_limit = -1;
 bool remove_entire_river = false;
@@ -707,10 +707,10 @@ void write_gndtype()
     f.close();
 }
 
-unsigned altitude_to_bmp(std::string file,std::vector<std::vector<uint16_t> > const &elev)
+unsigned altitude_to_bmp(std::string file,std::vector<std::vector<int16_t> > const &elev)
 {
-    unsigned max = 0;
-    int matrix_size = map_size * 2;
+    int max = 0;
+    int matrix_size = map_size * 8;
     for(int i=0;i<matrix_size;i++) {
         for(int j=0;j<matrix_size;j++) {
             if(elev[i][j] > max)
@@ -718,26 +718,21 @@ unsigned altitude_to_bmp(std::string file,std::vector<std::vector<uint16_t> > co
         }
     }
     outfile f(file);
-    bmp::header hdr(1024,1024);
+    bmp::header hdr(map_size * 8,map_size * 8);
     f.write(&hdr,sizeof(hdr));
     std::vector<uint8_t> row(matrix_size,0);
-    std::vector<uint8_t> zeros(1024,0);
     unsigned div = max;
     if(div == 0)
         div = 1;
-    int padding = (1024 - matrix_size)/2;
-    for(int i=0;i<padding;i++)
-        f.write(&zeros[0],1024);
     for(int i=matrix_size-1;i>=0;i--) {
         for(int j=0;j<matrix_size;j++) {
+            int v=elev[i][j];
+            if(v<0)
+                v=0;
             row[j] = elev[i][j] * 255u / div;
         }
-        f.write(&zeros[0],padding);
         f.write(&row[0],matrix_size);
-        f.write(&zeros[0],padding);
     }
-    for(int i=0;i<padding;i++)
-        f.write(&zeros[0],1024);
     f.close();
     return max;
 }
@@ -748,7 +743,7 @@ void save_elevations_file()
     outfile f(elev_file);
     int matrix_size = map_size * 2;
     int padding = (1024 - matrix_size) / 2;
-    std::vector<uint16_t> zero_row(1024,0);
+    std::vector<int16_t> zero_row(1024,0);
     for(int i=0;i<padding;i++) {
         f.write(&zero_row[0],2*1024);
     }
@@ -759,6 +754,16 @@ void save_elevations_file()
     }
     for(int i=0;i<padding;i++) {
         f.write(&zero_row[0],2*1024);
+    }
+    f.close();
+}
+
+void save_height_file()
+{
+    std::string elev_file = output_dir +"/" + map_name + ".raw";
+    outfile f(elev_file);
+    for(int i=elevations.size()-1;i>=0;i--) {
+        f.write(&elevations[i][0],elevations[i].size()*2);
     }
     f.close();
 }
@@ -965,7 +970,7 @@ surface_set get_water_set(water_generator &gen)
     }
     return water_elevations;
 }
-
+/*
 bool run_correction_iteration(surface_set &surfaces)
 {
     // The maximal allowed slope is 120 feet per 5280 feet (i.e. 1 mile). Elevations grid is
@@ -984,7 +989,7 @@ bool run_correction_iteration(surface_set &surfaces)
         if(s.has_lake)
             local_max_drop = 0;
         if(max - min > local_max_drop) {
-            uint16_t limit = min + local_max_drop;
+            int16_t limit = min + local_max_drop;
             for(int dr=0;dr<2;dr++)
                 for(int dc=0;dc<2;dc++)
                     elevations[s.r+dr][s.c+dc] = std::min(elevations[s.r+dr][s.c+dc],limit);
@@ -994,7 +999,8 @@ bool run_correction_iteration(surface_set &surfaces)
     }
     return ok;
 }
-
+*/
+/*
 void fix_river_elevations(water_generator &gen)
 {
     std::cout << "- Fixing river and lake slopes... " << std::flush;
@@ -1002,7 +1008,7 @@ void fix_river_elevations(water_generator &gen)
     // all surfaces containing water above altitude 0
     surface_set surfaces = get_water_set(gen);
     
-    std::vector<std::vector<uint16_t> > saved_elevations(elevations);
+    std::vector<std::vector<int16_t> > saved_elevations(elevations);
     // run corrections
     int iterations = 0;
     while(!run_correction_iteration(surfaces))
@@ -1018,7 +1024,7 @@ void fix_river_elevations(water_generator &gen)
     for(int r=0;r<map_size*2;r++) {
         for(int c=0;c<map_size*2;c++) {
             assert(saved_elevations[r][c] >= elevations[r][c]);
-            uint16_t diff = saved_elevations[r][c] - elevations[r][c];
+            int16_t diff = saved_elevations[r][c] - elevations[r][c];
             if(diff!=0) {
                 vertices++;
             }
@@ -1060,7 +1066,7 @@ void fix_sea_elevations(water_generator &gen)
         }
     }
 }
-
+*/
 void make_map_color_index(bmp::header &hdr)
 {
     
@@ -1160,7 +1166,7 @@ int get_color_from_type(int type,double brightness_factor)
 
 double get_scaled_elevation(double r,double c)
 {
-    int size = map_size * 2;
+    int size = map_size * 8;
     r*=size;
     c*=size;
     int rl = std::max(0,std::min(int(floor(r)),size-1));
@@ -1249,7 +1255,14 @@ void make_clipboard_map(int max_elev,water_generator &gen)
 
                 for(int wr=t_r;wr<t_r_e;wr++) {
                     for(int wc=t_c;wc<t_c_e;wc++) {
-                        int mark = gen.water_types[wr][wc];
+                        int mark;
+                        try {
+                            mark = gen.water_types.at(wr).at(wc);
+                        }
+                        catch(...) {
+                            std::cerr << r << " " << c << " " << wr << " " << wc << " " << gen.water_types.size() << std::endl;
+                            throw;
+                        }
                         if(mark & water_mask) {
                             has_water=true;
                         }
@@ -1295,7 +1308,7 @@ void make_clipboard_map(int max_elev,water_generator &gen)
     f.close();
 }
 
-int get_elevation_from_table(double lat,double lon,std::vector<std::vector<uint16_t> > const &el)
+int get_elevation_from_table(double lat,double lon,std::vector<std::vector<int16_t> > const &el)
 {
     int el_size = map_size * 2;
     int r = int(round((lat - lat2)/(lat1 - lat2) * el_size));
@@ -1312,7 +1325,7 @@ int get_elevation(double lat,double lon)
 }
 
 struct river_mark_callback {
-    std::vector<std::vector<uint16_t> > const *data;
+    std::vector<std::vector<int16_t> > const *data;
     std::map<int,int> *ignore_set;
     int limit;
     
@@ -1340,7 +1353,7 @@ struct river_mark_callback {
 };
 
 struct removed_river_callback {
-    std::vector<std::vector<uint16_t> > *data;
+    std::vector<std::vector<int16_t> > *data;
     std::map<int,int> *ignore_set;
     
     void operator()(int id,int segment,int r,int c) const
@@ -1358,10 +1371,10 @@ struct removed_river_callback {
         (*data)[r][c]=1;
     }
 };
-
+/*
 void pass_one()
 {
-    std::vector<std::vector<uint16_t> > fully_saved(elevations);
+    std::vector<std::vector<int16_t> > fully_saved(elevations);
     std::map<int,int> ignore_set;
     std::cout << "- Pass 1: Collecting required water slope corrections " << std::endl;
     water_generator gen(lat1,lat2,lon1,lon2,map_size * 32);
@@ -1374,7 +1387,7 @@ void pass_one()
 
     std::cout << "  --  Fixing sea altitudes" << std::endl;
     fix_sea_elevations(gen);
-    std::vector<std::vector<uint16_t> > river_elevations(elevations);
+    std::vector<std::vector<int16_t> > river_elevations(elevations);
     surface_set surfaces = get_water_set(gen);
     int iterations = 0;
     while(!run_correction_iteration(surfaces))
@@ -1395,7 +1408,7 @@ void pass_one()
     std::cout << "  -- Found " << ignore_set.size() << " rivers causing elevation drops above " <<  river_correction_limit << " feet"<< std::endl;
     std::cout << "  -- Saving removed_rivers.bmp... " << std::flush;
     {
-        std::vector<std::vector<uint16_t> > removed_rivers(map_size*2,std::vector<uint16_t>(map_size*2,0));
+        std::vector<std::vector<int16_t> > removed_rivers(map_size*2,std::vector<int16_t>(map_size*2,0));
         removed_river_callback cb = { &removed_rivers, &ignore_set};
         {
             water_generator::callback_guard guard(cb,gen);
@@ -1408,6 +1421,7 @@ void pass_one()
     elevations.swap(fully_saved);
     rv_prop.start_points = ignore_set;
 }
+*/
 
 int main(int argc,char **argv)
 {
@@ -1437,45 +1451,46 @@ int main(int argc,char **argv)
         resample_type();
  
         std::cout << "- Loading Digital Elevations Model data. " << std::endl;
-        std::vector<std::vector<uint16_t> > tmp=dem::read(db_type,map_size*2,lat1,lat2,lon1,lon2);
+        std::vector<std::vector<int16_t> > tmp=dem::read(db_type,map_size*8,lat1,lat2,lon1,lon2);
         elevations.swap(tmp);
         
-        std::set<int> ignore_set;
+        /*std::set<int> ignore_set;
         
         if(river_correction_limit != -1 && fix_river_slopes && rv_prop.max_level != 0)
             pass_one();
-                
-        water_generator gen(lat1,lat2,lon1,lon2,map_size * 32);
+        */
+        water_generator gen(lat1,lat2,lon1,lon2,map_size * 8);
         std::cout << "- Loading & processing shores data. " << std::endl;
         gen.load_land(shores);
         
+        /*
         if(rv_prop.max_level != 0) {
             std::cout << "- Loading & processing rivers data... " << std::endl;
             gen.load_rivers(rivers,rv_prop);
             gen.make_border();
             std::cout << "  Complete" << std::endl;
-        }
+        }*/
         
-        std::cout << "- Generating waterd.bmp... " << std::flush;
-        gen.save_waterd_map(output_dir + "/waterd.bmp",rv_prop);
+        std::cout << "- Updateing altitudes... " << std::flush;
+        gen.update_elevations(elevations,0.176);
         std::cout << "Done" << std::endl;
         
-        std::cout << "- Generating waterc.bmp... " << std::flush;
-        gen.save_waterc_map(output_dir + "/waterc.bmp",rv_prop);
-        std::cout << "Done" << std::endl;
+        
 
         std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;
-        write_reference_bmp();
+        //write_reference_bmp();
         recolor();
         update_gndtype(gen);
         std::cout << "Done" << std::endl;
-        
+        // */
         // make_beaches();
         
+        /*
         std::cout << "- Saving ground types: gndtype.bmp... " << std::flush;
         write_gndtype();
         std::cout << "Done" << std::endl;
-
+        */
+        /*
         std::cout << "- Fixing elevations near sea water... " << std::flush;
         fix_sea_elevations(gen);
         std::cout << "Done" << std::endl;
@@ -1483,9 +1498,10 @@ int main(int argc,char **argv)
         if(fix_river_slopes) {
             fix_river_elevations(gen);
         }
+        */
         
-        std::cout << "- Saving elevation data .elv and .bmp... " << std::flush;
-        save_elevations_file();
+        std::cout << "- Saving elevation data .raw and .bmp... " << std::flush;
+        save_height_file();
         unsigned max_alt = altitude_to_bmp(output_dir + "/" + map_name + "_elevations.bmp",elevations);
         std::cout << "Done" << std::endl;
         std::cout << "-- Maximal altitude (for use with TE bmp import) is " << max_alt << " feet" << std::endl;
