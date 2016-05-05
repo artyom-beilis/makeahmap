@@ -258,6 +258,7 @@ public:
         water_types.clear();
         water_types.resize(water_size,std::vector<unsigned char>(water_size,0));
         std::queue<int> review;
+		std::set<int> inserted;
         int pos;
 		for(int r=0;r<water_size;r++) {
             pos = ((water_size - 1)- r)  * water_size;
@@ -269,6 +270,7 @@ public:
                 //if(type != land_mark && data[c]!=0)
                 //    water_types[type_r][type_c] |= 2u << (type*2);
                 //}
+				/*
                 switch(type){
                 case sea_mark:
                     elev[r][c] = -100;
@@ -282,7 +284,29 @@ public:
                         review.push(pos);
                     }
                     break;
-                }
+                }*/
+				switch(type) {
+                case land_mark:
+                    break;
+                case sea_mark:
+                case lake_mark:
+                case river_mark:
+					const int water_spread=2;
+					for(int dr=-water_spread;dr<=water_spread;dr++) {
+						for(int dc=-water_spread;dc<=water_spread;dc++) {
+							if(dr*dr + dc*dc > water_spread*water_spread+1)
+								continue;
+							int mr = std::max(0,std::min(dr + r,water_size-1));
+							int mc = std::max(0,std::min(dc + c,water_size-1));
+							elev[mr][mc] = -100;
+							int tmp_pos = mr * water_size + mc;
+							if(inserted.find(tmp_pos)==inserted.end())
+								review.push(tmp_pos);
+							//review.push(pos);
+						}
+					}
+                    break;
+				}
 			}
 		}
         int max_fix = 0;
