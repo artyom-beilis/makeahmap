@@ -1,4 +1,10 @@
-YYYY-MM-DD: Version 0.6
+2016-05-05: Version 1.1alpha
+
+Initial very basic support of AH3 - only clipboard map and elevations are generated
+all lakes put to alt=0 no reivers no ground cover
+
+
+2013-10-29: Version 0.6
 
 Bug fixes:
 
