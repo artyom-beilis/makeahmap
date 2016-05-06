@@ -1,13 +1,36 @@
 
                           M A K E A H M A P
         
-            (C) 2013 Artyom Beilis <artyomtnk@yahoo.com>
+            (C) 2016 Artyom Beilis <artyomtnk@yahoo.com>
         
                       For licensing details see:
                        copyright-makeahmap.txt
 
+
 ========================================================================
-This program is designed to prepare data for AH2 Maps for Terrain Editor.
+TEMPORARY NOTICE
+
+
+I put makeahmap version for AH3 - it is very basic version, it does:
+
+- Elevation with higher accuracy using SRTM3 - for newer model (vasly improves visual appearance)
+- Sea and lakes set to altitude -100 so it isn't best right now
+
+What is missing:
+
+- Globcover support for automatic terrain type mapping
+- Rivers in new model
+- Proper non-0 altitude lakes
+
+Known - Issues
+
+- Some issues when two land objects are close sometimes water removed (like Suez)
+- GTOPO30 does not work (source is gone and I can't find a new one)
+
+
+
+========================================================================
+This program is designed to prepare data for AH3 Maps for Terrain Editor.
 ========================================================================
 
 It Generates
