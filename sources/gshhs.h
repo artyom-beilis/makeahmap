@@ -31,6 +31,7 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <list>
 #include <algorithm>
 #include <vector>
 #include <stdint.h>
@@ -155,6 +156,7 @@ public:
 
 	int water_size;
 	std::vector<unsigned char> watermap;
+	std::vector<int> land_ids;
     std::vector<std::vector<unsigned char> > water_types;
 	
 	water_generator(double flat1,double flat2,double flon1,double flon2,int water_size_in)
@@ -166,6 +168,8 @@ public:
 		lon2=int(round(1e6*flon2));
 		water_size = water_size_in;
 		watermap.resize(water_size*water_size / 4,0);
+		land_ids.resize(water_size*water_size,-1);
+		
 
 		if(lat1 > lat2)
 			std::swap(lat1,lat2);
@@ -182,9 +186,10 @@ public:
 		close();
 	}
 
-	void load_land(std::string file_name)
+	void load_land(std::string file_name,std::vector<std::vector<int16_t> > &elev,double area_limit_sq_m,int alt_limit)
 	{
 		open(file_name);
+		int area_limit_points = static_cast<int>(area_limit_sq_m * 8 * 8);
 		while(get()) {
 			int level = (hdr.flag & 255);
 			int river = (hdr.flag >> 25) & 1; 
@@ -201,6 +206,7 @@ public:
 			int patch_rows = rmax - rmin+1;
 			
 			// prepare index
+			int total_lines = 0;
 			std::vector<std::vector<int> > intersection_points(patch_rows);
 			
 			assert(poly.front().x == poly.back().x);
@@ -224,6 +230,7 @@ public:
 					int x=0;
 					if(get_intersection_point(y,start,end,x)) {
 						intersection_points[r-rmin].push_back(x);
+						total_lines ++;
 					}
 				}
 			}
@@ -233,7 +240,9 @@ public:
 				std::sort(intersection_points[i].begin(),intersection_points[i].end());
 			}
 
-			// fill the lines
+			// make sets of lines
+			std::vector<std::pair<int,std::pair<int,int> > > lines;
+			lines.reserve(total_lines);
 			for(int r=rmin,row_index=0;r<=rmax;r++,row_index++) {
 				std::vector<int> &index = intersection_points[row_index];
 				for(size_t i=0;i<index.size();i+=2) {
@@ -243,8 +252,36 @@ public:
 					int c2 = int(round(lon_2_col * (x2 - lon1)));
 					c1=std::max(0,c1);
 					c2=std::min(water_size-1,c2);
+					lines.push_back(std::make_pair(r,std::make_pair(c1,c2)));
+				}
+			}
+
+			bool write_down = true;
+			double average = 0.0;
+			int total = 0;
+			for(size_t i=0;i<lines.size();i++) {
+				int r=water_size - 1 - lines[i].first;
+				int c1 = lines[i].second.first;
+				int c2 = lines[i].second.second;
+				for(int c=c1;c<=c2;c++) {
+					average+= elev[r][c];
+				}
+				total += c2 - c1 + 1;
+			}
+			if(total > 0) {
+				average /= total;
+				if(value == lake_mark && average > alt_limit)
+					write_down = false;
+				if(total < area_limit_points) 
+					write_down = false;
+			}
+			if(write_down) {
+				for(size_t i=0;i<lines.size();i++) {
+					int r=lines[i].first;
+					int c1 = lines[i].second.first;
+					int c2 = lines[i].second.second;
 					for(int c=c1;c<=c2;c++) {
-						mark(value,r,c);
+						mark(value,r,c,-1,hdr.id);
 					}
 				}
 			}
@@ -257,9 +294,9 @@ public:
     {
         water_types.clear();
         water_types.resize(water_size,std::vector<unsigned char>(water_size,0));
-        std::queue<int> review;
-		std::set<int> inserted;
+		std::set<int> review;
         int pos;
+		
 		for(int r=0;r<water_size;r++) {
             pos = ((water_size - 1)- r)  * water_size;
 			for(int c=0;c<water_size;c++,pos++)  {
@@ -285,25 +322,30 @@ public:
                     }
                     break;
                 }*/
+				if(r==0 || c==0 || r==water_size-1 || c==water_size-1)
+					type = sea_mark;
 				switch(type) {
                 case land_mark:
+					for(int dr=-1;dr<=1;dr++) {
+						for(int dc=-1;dc<=1;dc++) {
+							int mr = std::max(0,std::min(dr + r,water_size-1));
+							int mc = std::max(0,std::min(dc + c,water_size-1));
+							int type_mr = (water_size - 1 - mr);
+							int tmp_pos = type_mr * water_size + mc;
+							int tmp_value = internal_pixel(type_mr,mc);
+							if(tmp_value == land_mark && land_ids[pos] != land_ids[tmp_pos] && land_ids[tmp_pos]!=-1) {
+								elev[mr][mc] = -100;
+								review.insert(mr * water_size + mc);
+							}
+						}
+					}
                     break;
                 case sea_mark:
                 case lake_mark:
                 case river_mark:
-					const int water_spread=2;
-					for(int dr=-water_spread;dr<=water_spread;dr++) {
-						for(int dc=-water_spread;dc<=water_spread;dc++) {
-							if(dr*dr + dc*dc > water_spread*water_spread+1)
-								continue;
-							int mr = std::max(0,std::min(dr + r,water_size-1));
-							int mc = std::max(0,std::min(dc + c,water_size-1));
-							elev[mr][mc] = -100;
-							int tmp_pos = mr * water_size + mc;
-							if(inserted.find(tmp_pos)==inserted.end())
-								review.push(tmp_pos);
-							//review.push(pos);
-						}
+					{
+						elev[r][c] = -100;
+						review.insert(r*water_size + c);
 					}
                     break;
 				}
@@ -313,14 +355,18 @@ public:
         static const int horizontal_feet = 660;
         int direct_feet_limit = static_cast<int>(slope * horizontal_feet);
         int cross_feet_limit = static_cast<int>(slope * 1.41421 * horizontal_feet);
-        while(!review.empty()) {
-            int pos = review.front();
-            review.pop();
+		
+		std::queue<int> review_queue;
+		for(std::set<int>::iterator rp = review.begin();rp!=review.end();rp++)
+			review_queue.push(*rp);
+        while(!review_queue.empty()) {
+            int pos = review_queue.front();
+            review_queue.pop();
             int c_r = pos / water_size;
             int c_c = pos % water_size;
             int alt = elev[c_r][c_c];
-            if(alt < 0)
-                alt = 0;
+            /*if(alt < 0)
+                alt = 0;*/
             for(int dr = -1;dr<=1;dr++) {
                 for(int dc=-1;dc<=1;dc++) {
                     if(dr==0 && dc==0)
@@ -334,7 +380,7 @@ public:
                         int diff = elev[r][c] - (alt + limit);
                         max_fix = std::max(max_fix,diff);
                         elev[r][c] = alt + limit;
-                        review.push(r * water_size + c);
+                        review_queue.push(r * water_size + c);
                     }
                 }
             }
@@ -636,7 +682,7 @@ private:
         }
     }
 
-  	void mark(int type,int r,int c,int segment=-1)
+  	void mark(int type,int r,int c,int segment=-1,int id=-1,int level=-1)
 	{
         if(cb_) {
             cb_(hdr.id,segment,(water_size-1)-r,c);
@@ -656,6 +702,7 @@ private:
         current &= ~(3u << off);
         current |=  (type << off);
 		watermap[preal] = current;
+		land_ids[p] = id;
 	}
 
 

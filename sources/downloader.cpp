@@ -378,6 +378,9 @@ namespace downloader {
         int count=0;
 		
 		DIR *d=opendir(temp_dir_.c_str());
+		if(!d){
+			throw std::runtime_error("Failed to open temporary directory :" + temp_dir_);
+		}
 		struct dirent *de=0;
 		bool message_written = false;
 		while((de=readdir(d))!=0) {

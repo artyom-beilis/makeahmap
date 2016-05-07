@@ -1,3 +1,14 @@
+2016-05-07: Version 1.2alpha
+
+- Fixed water slope handling
+- Fixed water channels between land areas
+- Now temp directory is cleaned on startup so in case of download fails program can just run again
+- Added options:
+   lake_alt_limit - maximal allowed lake altitude - so it would be removed rather then brought to sea level
+   lake_or_island_min_size - minimal size of lake or island if it is smaller than this it is not rendered
+   water_to_land_slope - the slope the altitude rises from water
+
+
 2016-05-05: Version 1.1alpha
 
 Initial very basic support of AH3 - only clipboard map and elevations are generated

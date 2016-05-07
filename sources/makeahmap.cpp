@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Artyom Beilis
+ * Copyright (c) 2013-2106 Artyom Beilis
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -62,6 +62,9 @@ int ground_types[4];
 double river_north_shift = 0.0;
 double river_east_shift = 0.0;
 bool fix_river_slopes = true;
+int lake_alt_limit = 30000; //higher than everest
+double lake_or_island_min_size = 0.0; // sq miles
+double water_to_land_slope = 0.176; 
 
 std::string map_name = "map";
 std::string tiff_file="./data/globcover/globcover.tif";
@@ -436,6 +439,15 @@ void load_profile(std::string file_name)
             else if(key == "grid_dir") {
                 grid_dir = value;
             }
+			else if(key == "lake_alt_limit") {
+				lake_alt_limit = atoi(value.c_str());
+			}
+			else if(key == "lake_or_island_min_size") {
+				lake_or_island_min_size = atof(value.c_str());
+			}
+			else if(key == "water_to_land_slope") {
+				water_to_land_slope = atof(value.c_str());
+			}
             else if(key == "fix_river_slopes") {
                 if(value == "yes")
                     fix_river_slopes = true;
@@ -1461,7 +1473,7 @@ int main(int argc,char **argv)
         */
         water_generator gen(lat1,lat2,lon1,lon2,map_size * 8);
         std::cout << "- Loading & processing shores data. " << std::endl;
-        gen.load_land(shores);
+        gen.load_land(shores,elevations,lake_or_island_min_size,lake_alt_limit);
         
         /*
         if(rv_prop.max_level != 0) {
@@ -1472,7 +1484,7 @@ int main(int argc,char **argv)
         }*/
         
         std::cout << "- Updateing altitudes... " << std::flush;
-        gen.update_elevations(elevations,0.176);
+        gen.update_elevations(elevations,water_to_land_slope);
         std::cout << "Done" << std::endl;
         
         

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 # MinGW Specific
-set(CMAKE_CXX_FLAGS "-std=c++0x -m32 -DDLL_EXPORT -DCURL_STATICLIB")
+set(CMAKE_CXX_FLAGS "-std=c++0x -Wall -m32 -DDLL_EXPORT -DCURL_STATICLIB")
 set(CMAKE_RC_FLAGS " -F pe-i386")
 
 # Libraries
