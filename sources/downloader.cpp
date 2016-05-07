@@ -34,6 +34,7 @@
 #include <fstream>
 #include <sstream>
 #include <libgen.h>
+#include <dirent.h>
 
 
 namespace downloader {
@@ -375,6 +376,27 @@ namespace downloader {
             throw std::runtime_error("Failed to load download manager profile");
         std::string line;
         int count=0;
+		
+		DIR *d=opendir(temp_dir_.c_str());
+		struct dirent *de=0;
+		bool message_written = false;
+		while((de=readdir(d))!=0) {
+			if(de->d_name[0]=='.') 
+				continue;
+			if(!message_written) {
+				std::cout << "Cleaning temporary directory:\n";
+				message_written = true;
+			}
+			if(remove((temp_dir_ + "/" + de->d_name).c_str())!=0) {
+				std::string msg = strerror(errno);
+				std::cout << "- Warning, failed to remove:" << de->d_name << ", " << msg << '\n';
+			}
+			else {
+				std::cout << "- Removed: " << de->d_name << '\n';
+			}
+		}
+		closedir(d);
+		
         while(std::getline(in,line)) {
             count++;
             if(line.empty() || line[0]=='#' || line.find_first_not_of(" \t\r\n")==std::string::npos)
