@@ -43,14 +43,14 @@ namespace bmp {
         uint32_t clr_important;
         rgbq colors[256];
 
-        info_header(int rows,int cols)
+        info_header(int rows,int cols,int bits = 8)
         {
             memset(this,0,sizeof(*this));
             size=40;
             width=cols;
             height=rows;
             planes=1;
-            bitcount = 8;
+            bitcount = bits;
             compr = 0;
             xppm=1000;
             yppm=1000;
@@ -66,12 +66,16 @@ namespace bmp {
         uint16_t res2;
         uint32_t offset;
         info_header ih;
-        header(int rows,int cols) : ih(rows,cols) {
+        header(int rows,int cols,int bits = 8) : ih(rows,cols,bits) {
             type[0]='B';
             type[1]='M';
             res1=res2=0;
-            size = sizeof(*this) + rows * cols;
+            size = sizeof(*this) + rows * cols * bits / 8 ;
             offset = sizeof(*this); 
+			if(bits != 8) {
+				size -= 1024;
+				offset -= 1024;
+			}
         }
     };
 }

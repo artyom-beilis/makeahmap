@@ -49,7 +49,7 @@ bool remove_entire_river = false;
 dem::db_properties db_type;
 
 std::vector<std::vector<unsigned char> > bare_types;
-std::vector<std::vector<unsigned char> > types;
+std::vector<std::vector<int> > types;
 
 static const int lower_lat = -65;
 
@@ -180,15 +180,18 @@ color grid_color(64,64,64);
 // ntt0012 C  Snow / Coral
 
 static const unsigned char beach_type = 0xAA;
+/*
+
+AH2 types 
 
 static const int map_type_in[][3] = {
  { 11,  0x44 }, //Post-flooding or irrigated croplands (or aquatic)
- { 14,  0x55 }, //Rainfed croplands
- { 20,  0x24 }, //Mosaic cropland (50-70%) / vegetation (grassland/shrubland/forest) (20-50%)
+ { 14,  0x0080FF }, //Rainfed croplands
+ { 20,  0x0040FF }, //Mosaic cropland (50-70%) / vegetation (grassland/shrubland/forest) (20-50%)
  { 30,  0x42 }, //Mosaic vegetation (grassland/shrubland/forest) (50-70%) / cropland (20-50%) 
  { 40,  0x21 }, //Closed to open (>15%) broadleaved evergreen or semi-deciduous forest (>5m)
- { 50,  0x22 }, //Closed (>40%) broadleaved deciduous forest (>5m)
- { 60,  0x21 }, //Open (15-40%) broadleaved deciduous forest/woodland (>5m)
+ { 50,  0xA00000 }, //Closed (>40%) broadleaved deciduous forest (>5m)
+ { 60,  0xA00000 }, //Open (15-40%) broadleaved deciduous forest/woodland (>5m)
  { 70,  0x33 }, //Closed (>40%) needleleaved evergreen forest (>5m)
  { 90,  0x31 }, //Open (15-40%) needleleaved deciduous or evergreen forest (>5m)
  { 100, 0x32 }, //Closed to open (>15%) mixed broadleaved and needleleaved forest (>5m)
@@ -207,10 +210,39 @@ static const int map_type_in[][3] = {
  { 230, 0xAA },    // No data (burnt areas, clouds,…)
  { -1, 0}
 };
+*/
+static const int map_type_in[][2] = {
+ { 11,  0x0000FF }, //Post-flooding or irrigated croplands (or aquatic)
+ { 14,  0x0080FF }, //Rainfed croplands
+ { 20,  0x0040FF }, //Mosaic cropland (50-70%) / vegetation (grassland/shrubland/forest) (20-50%)
+ { 30,  0x004000 }, //Mosaic vegetation (grassland/shrubland/forest) (50-70%) / cropland (20-50%) 
+ { 40,  0xA00000 }, //Closed to open (>15%) broadleaved evergreen or semi-deciduous forest (>5m)
+ { 50,  0xA00000 }, //Closed (>40%) broadleaved deciduous forest (>5m)
+ { 60,  0xA00000 }, //Open (15-40%) broadleaved deciduous forest/woodland (>5m)
+ { 70,  0xA00000 }, //Closed (>40%) needleleaved evergreen forest (>5m)
+ { 90,  0xA00000 }, //Open (15-40%) needleleaved deciduous or evergreen forest (>5m)
+ { 100, 0x800000 }, //Closed to open (>15%) mixed broadleaved and needleleaved forest (>5m)
+ { 110, 0x0080FF }, //Mosaic forest or shrubland (50-70%) / grassland (20-50%)
+ { 120, 0x0080FF }, //Mosaic grassland (50-70%) / forest or shrubland (20-50%) 
+ { 130, 0x500000 }, //Closed to open (>15%) (broadleaved or needleleaved, evergreen or deciduous) shrubland (<5m)
+ { 140, 0x500000 }, //Closed to open (>15%) herbaceous vegetation (grassland, savannas or lichens/mosses)
+ { 150, 0x200000 }, //Sparse (<15%) vegetation
+ { 160, 0x800000 }, //Closed to open (>15%) broadleaved forest regularly flooded (semi-permanently or temporarily) - Fresh or brackish water
+ { 170, 0x800000 }, //Closed (>40%) broadleaved forest or shrubland permanently flooded - Saline or brackish water
+ { 180, 0x700000 }, //Closed to open (>15%) grassland or woody vegetation on regularly flooded or waterlogged soil - Fresh, brackish or saline water
+ { 190, 0x00C0FF },    // type 19 Artificial surfaces and associated areas (Urban areas >50%)
+ { 200, 0x000000 },    // type 0 Bare areas
+ { 210, 0x100000 },    // type 1 Waterbodies
+ { 220, 0xF00000 },    // type 15 Permanent snow and ice
+ { 230, 0x000000 },    // type 0 No data (burnt areas, clouds,…)
+ { -1, 0}
+};
+
+
 
 bool is_water(int c) { return c==210 || c==230; }
 
-static unsigned char map_type[256];
+static int map_type[256];
 
 static const int map_in[][4] = {
     {11,170,240,240},
@@ -247,7 +279,8 @@ void prepare_map()
         for(int j=0;j<3;j++) 
             tmap[map_in[i][0]][j]=map_in[i][j+1];
     }
-    for(int i=0;map_type_in[i][0]!=-1;i++) {
+	for(int i=0;map_type_in[i][0]!=-1;i++) {
+		std::cout << std::dec << map_type_in[i][0] << "->" << std::hex <<map_type_in[i][1] << std::dec << std::endl;
         map_type[map_type_in[i][0]] = map_type_in[i][1];
     }
 }
@@ -272,8 +305,8 @@ void load_custom_type_mapping()
         unsigned gcover=0,ah=0;
         char c;
 
-        ss >> gcover >> c >> ah;
-        if(!ss || c!=',' || gcover >=256 || ah >= 256) {
+        ss >> std::dec >> gcover >> c >> std::hex >> ah;
+        if(!ss || c!=',' || gcover >=256) {
             std::ostringstream tmp;
             tmp << "Invalid line " << lineno << " in file " << custom_mapping;
             throw std::runtime_error(tmp.str());
@@ -644,7 +677,7 @@ void resample_type()
 {
     // resample
     int bmp_size = map_size * 8;
-    types.resize(bmp_size,std::vector<unsigned char>(bmp_size,0));
+    types.resize(bmp_size,std::vector<int>(bmp_size,0));
     int bh = bare_types.size();
     int bw = bare_types[0].size();
     double r_factor = double(bh) / bmp_size;
@@ -668,19 +701,20 @@ void write_reference_bmp()
     outfile f(fname);
     int rows = types.size();
     int cols = types[0].size();
-    bmp::header hdr(rows,cols);
+    bmp::header hdr(rows,cols,32);
 
-    for(int i=0;map_in[i][0]!=-1;i++) {
-        bmp::rgbq *c = &hdr.ih.colors[map_in[i][0]];
-        c->r = map_in[i][1];
-        c->g = map_in[i][2];
-        c->b = map_in[i][3];
-    }
-
-    f.write(&hdr,sizeof(hdr));
+    f.write(&hdr,hdr.offset);
     
+	std::vector<bmp::rgbq> c(cols);
     for(int i=types.size()-1;i>=0;i--) {
-        f.write(&types[i][0],types[i].size());
+		for(int j=0;j<cols;j++) {
+			int color = types[i][j];
+			c[j].r = color;
+			c[j].g = color;
+			c[j].b = color;
+			c[j].res = 0;
+		}
+        f.write(reinterpret_cast<char*>(&c[0]),cols*4);
     }
     f.close();
 }
@@ -690,29 +724,36 @@ void recolor()
     int bmp_size = map_size * 8;
     for(int r=0;r<bmp_size;r++) {
         for(int c=0;c<bmp_size;c++) {
-            types[r][c]=map_type[types[r][c]];
+			types[r][c]=map_type[types[r][c]];
         }
     }
 }
 
 void write_gndtype()
 {
-    std::string fname = output_dir + "/gndtype.bmp";
+    std::string fname = output_dir + "/splattype.bmp";
     outfile f(fname);
     int rows = types.size();
     int cols = types[0].size();
-    bmp::header hdr(4096,4096);
-    f.write(&hdr,sizeof(hdr));
-    
+    bmp::header hdr(4096,4096,32);
+    f.write(&hdr,hdr.offset);
+    std::vector<bmp::rgbq> c(cols);
     int padding = (4096 - rows)/2;
     
-    std::vector<unsigned char> zeros(4096,0);
+    std::vector<unsigned char> zeros(4096*4,0);
     for(int i=0;i<padding;i++)
         f.write(&zeros[0],zeros.size());
     for(int i=rows-1;i>=0;i--) {
-        f.write(&zeros[0],padding);
-        f.write(&types[i][0],cols);
-        f.write(&zeros[0],padding);
+        f.write(&zeros[0],padding*4);
+		for(int j=0;j<cols;j++) {
+			int color = types[i][j];
+			c[j].r = (color >> 16)& 0xFF;
+			c[j].g = (color >> 8)& 0xFF;
+			c[j].b = (color >> 0)& 0xFF;
+			c[j].res = 0;
+		}
+        f.write(&c[0],cols*4);
+        f.write(&zeros[0],padding*4);
     }
     for(int i=0;i<padding;i++)
         f.write(&zeros[0],zeros.size());
@@ -1490,18 +1531,18 @@ int main(int argc,char **argv)
         
 
         std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;
-        //write_reference_bmp();
+        write_reference_bmp();
         recolor();
-        update_gndtype(gen);
+        //update_gndtype(gen);
         std::cout << "Done" << std::endl;
         // */
         // make_beaches();
         
-        /*
-        std::cout << "- Saving ground types: gndtype.bmp... " << std::flush;
+        
+        std::cout << "- Saving ground types: splattype.bmp... " << std::flush;
         write_gndtype();
         std::cout << "Done" << std::endl;
-        */
+        
         /*
         std::cout << "- Fixing elevations near sea water... " << std::flush;
         fix_sea_elevations(gen);

@@ -334,7 +334,7 @@ public:
 							int tmp_pos = type_mr * water_size + mc;
 							int tmp_value = internal_pixel(type_mr,mc);
 							if(tmp_value == land_mark && land_ids[pos] != land_ids[tmp_pos] && land_ids[tmp_pos]!=-1) {
-								elev[mr][mc] = -100;
+								elev[mr][mc] = -10;
 								review.insert(mr * water_size + mc);
 							}
 						}
@@ -344,7 +344,7 @@ public:
                 case lake_mark:
                 case river_mark:
 					{
-						elev[r][c] = -100;
+						elev[r][c] = -10;
 						review.insert(r*water_size + c);
 					}
                     break;
