@@ -185,7 +185,45 @@ public:
 	{
 		close();
 	}
-
+	
+	struct segment {
+		double r0,r1,c0,c1;
+		double length;
+		double n_x,n_y;
+		void calc_params()
+		{
+			length = sqrt((r0 - r1)*(r0 - r1) + (c0-c1)*(c0-c1));
+			if(length < 0.000001) {
+				n_x = 1;
+				n_y = 0;
+			}
+			else {
+				n_x = (c1 - c0) / length;
+				n_y = (r1 - r0) / length;
+			}
+			
+		}
+		double distance(double r,double c) const
+		{
+			double x0=c,y0=r;
+			double p_y=r0,p_x=c0;
+			double dx = x0 - p_x;
+			double dy = y0 - p_y;
+			double proj = dx * n_x + dy * n_y;
+			if(proj < 0) 
+				return sqrt((dx*dx) + (dy*dy));
+			if(proj > length) {
+				double dr = r1-r;
+				double dc = c1-c;
+				return sqrt(dr*dr + dc*dc);
+			}
+			double ref_x = p_x + n_x * proj - x0;
+			double ref_y = p_y + n_y * proj - y0;
+			double proj_norm = ref_x * n_y - ref_y * n_x;
+			return fabs(proj_norm);
+		}
+	};
+	
 	void load_land(std::string file_name,std::vector<std::vector<int16_t> > &elev,double area_limit_sq_m,int alt_limit)
 	{
 		open(file_name);
@@ -212,12 +250,23 @@ public:
 			assert(poly.front().x == poly.back().x);
 			assert(poly.front().y == poly.back().y);
 
+			std::list<segment> cur_segments;
+		
 			for(int i = 0;i < points - 1;i++) {
 				point start = poly[i];
 				point end = poly[i+1];
 				
 				int bot = std::min(start.y,end.y);
 				int top = std::max(start.y,end.y);
+				
+				
+				segment s;
+				s.r0 = lat_2_row * (start.y - lat1);
+				s.r1 = lat_2_row * (end.y   - lat1);
+				s.c0 = lon_2_col * (start.x - lon1);
+				s.c1 = lon_2_col * (end.x   - lon1);
+				s.calc_params();
+				cur_segments.push_back(s);
 
 				int row_start  = int(floor(lat_2_row * (bot - lat1))) - 1;
 				int row_end   = int(ceil (lat_2_row * (top - lat1))) + 1;	
@@ -250,9 +299,14 @@ public:
 					int x2 = index[i+1];
 					int c1 = int(round(lon_2_col * (x1 - lon1)));
 					int c2 = int(round(lon_2_col * (x2 - lon1)));
-					c1=std::max(0,c1);
-					c2=std::min(water_size-1,c2);
+					c1=std::max(0,std::min(c1,water_size-1));
+					c2=std::max(0,std::min(c2,water_size-1));
+					if(c1 > c2)
+						std::swap(c1,c2);
 					lines.push_back(std::make_pair(r,std::make_pair(c1,c2)));
+					assert(0  <= c1);
+					assert(c1 <= c2);
+					assert(c2 < water_size);
 				}
 			}
 
@@ -275,7 +329,11 @@ public:
 				if(total < area_limit_points) 
 					write_down = false;
 			}
+			else
+				write_down = false;
+			assert(total >= 0);
 			if(write_down) {
+				segments.splice(segments.end(),cur_segments);
 				for(size_t i=0;i<lines.size();i++) {
 					int r=lines[i].first;
 					int c1 = lines[i].second.first;
@@ -288,8 +346,57 @@ public:
 
 		}
 		close();
+		double max_len = 0;
+		std::cout << "Total segments:" << segments.size() << std::endl;
+		for(auto s : segments) {
+			max_len = std::max(max_len,s.length);
+		}
+		std::cout << "Max segment lenght:" << max_len << std::endl;
 	}
-    
+#if 1
+    void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope)
+    {
+		std::ofstream f("rep.pgm",std::ios::binary);
+		f<<"P5 " << water_size << " " << water_size << " 255\n";
+		static const int alt_limit = 100;
+		double alt_for_cell = slope * 660;
+		double max_dist = alt_limit / alt_for_cell + 1;
+		std::vector<std::vector<double> > dist(	water_size,std::vector<double>(water_size,max_dist));
+		for(segment const &s: segments) {
+			int rmin=std::max(0,int(std::min(s.r0,s.r1) - max_dist));
+			int cmin=std::max(0,int(std::min(s.c0,s.c1) - max_dist));
+			int rmax=std::min(water_size-1,int(std::max(s.r0,s.r1) + max_dist));
+			int cmax=std::min(water_size-1,int(std::max(s.c0,s.c1) + max_dist));
+			for(int r=rmin;r<=rmax;r++) {
+				for(int c=cmin;c<=cmax;c++) {
+					double d = s.distance(r,c);
+					if(d < dist[r][c])
+						dist[r][c] = d;
+				}
+			}
+		}
+		for(int r=0;r<water_size;r++) {
+			int elev_r = water_size - r - 1;
+			std::cout << r << std::endl;
+			for(int c=0;c<water_size;c++) {
+				int pos = water_size * r + c;
+				int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
+				int sig = -1;
+				if(type == land_mark)  {
+					sig = 1;
+				}
+				int idist = int(round(dist[r][c] * alt_for_cell * sig));
+				idist = std::max(-alt_limit,std::min(alt_limit,idist));
+				elev[elev_r][c] = idist;
+				unsigned char c=idist + 100;
+				f<< c;
+			}
+		}
+		return;
+    }
+
+#else
+	
     void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope)
     {
         water_types.clear();
@@ -304,24 +411,6 @@ public:
                 int type_c = c;
                 int type_r = (water_size - 1 - r);
                 water_types[r][c] |= 1u << (type*2);
-                //if(type != land_mark && data[c]!=0)
-                //    water_types[type_r][type_c] |= 2u << (type*2);
-                //}
-				/*
-                switch(type){
-                case sea_mark:
-                    elev[r][c] = -100;
-                    break;
-                case land_mark:
-                    break;
-                case lake_mark:
-                case river_mark:
-                    if(elev[r][c]!=0) {
-                        elev[r][c] = -100;
-                        review.push(pos);
-                    }
-                    break;
-                }*/
 				if(r==0 || c==0 || r==water_size-1 || c==water_size-1)
 					type = sea_mark;
 				switch(type) {
@@ -365,8 +454,6 @@ public:
             int c_r = pos / water_size;
             int c_c = pos % water_size;
             int alt = elev[c_r][c_c];
-            /*if(alt < 0)
-                alt = 0;*/
             for(int dr = -1;dr<=1;dr++) {
                 for(int dc=-1;dc<=1;dc++) {
                     if(dr==0 && dc==0)
@@ -387,7 +474,7 @@ public:
         }
         std::cout << "  Maximal correction is " << max_fix << std::endl;
     }
-	
+#endif	
     void save_waterc_map(std::string out,water_properties const &prop)
 	{
 		bmp::header hdr(16384,16384);
@@ -864,6 +951,9 @@ private:
 	double col_2_lon,lon_2_col,row_2_lat,lat_2_row;
 	
 	std::vector<point> poly;
+	
+	std::list<segment> segments;
+	
 	GSHHS hdr;
 
 	fileio f;
