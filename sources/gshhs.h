@@ -245,16 +245,16 @@ public:
 			
 			// prepare index
 			int total_lines = 0;
-			std::vector<std::vector<int> > intersection_points(patch_rows);
+			std::vector<std::vector<double> > intersection_points(patch_rows);
 			
 			assert(poly.front().x == poly.back().x);
 			assert(poly.front().y == poly.back().y);
 
 			std::list<segment> cur_segments;
-		
 			for(int i = 0;i < points - 1;i++) {
 				point start = poly[i];
 				point end = poly[i+1];
+					
 				
 				int bot = std::min(start.y,end.y);
 				int top = std::max(start.y,end.y);
@@ -275,37 +275,44 @@ public:
 				row_end   = range_limit(row_end  ,rmin,rmax);
 				
 				for(int r=row_start;r<=row_end;r++) {
-					int y = int(round(r * row_2_lat)) + lat1;
-					int x=0;
-					if(get_intersection_point(y,start,end,x)) {
+					double y = (r * row_2_lat) + lat1;
+					double x=0;
+					if(get_intersection_point(r,y,start,end,x)) {
 						intersection_points[r-rmin].push_back(x);
 						total_lines ++;
 					}
 				}
 			}
-
 			for(int i=0;i<patch_rows;i++) {
+				if(intersection_points[i].size() % 2 != 0) {
+					printf("Row case = %d size=%d\n",i+rmin,int(intersection_points[i].size()));
+					for(unsigned j=0;j<intersection_points[i].size();j++)
+						printf("   x=%f\n",intersection_points[i][j]);
+				}
 				assert(intersection_points[i].size() % 2 == 0);
 				std::sort(intersection_points[i].begin(),intersection_points[i].end());
 			}
+
 
 			// make sets of lines
 			std::vector<std::pair<int,std::pair<int,int> > > lines;
 			lines.reserve(total_lines);
 			for(int r=rmin,row_index=0;r<=rmax;r++,row_index++) {
-				std::vector<int> &index = intersection_points[row_index];
+				std::vector<double> &index = intersection_points[row_index];
 				for(size_t i=0;i<index.size();i+=2) {
 					int x1 = index[i];
 					int x2 = index[i+1];
-					int c1 = int(round(lon_2_col * (x1 - lon1)));
-					int c2 = int(round(lon_2_col * (x2 - lon1)));
+					if(x1 > x2)
+						std::swap(x1,x2);
+					int c1 = int(ceil(lon_2_col * (x1 - lon1)));
+					int c2 = int(floor(lon_2_col * (x2 - lon1)));
 					c1=std::max(0,std::min(c1,water_size-1));
 					c2=std::max(0,std::min(c2,water_size-1));
-					if(c1 > c2)
-						std::swap(c1,c2);
-					lines.push_back(std::make_pair(r,std::make_pair(c1,c2)));
+					
+					assert(c2-c1>=-1);
+					if(c1<=c2)
+						lines.push_back(std::make_pair(r,std::make_pair(c1,c2)));
 					assert(0  <= c1);
-					assert(c1 <= c2);
 					assert(c2 < water_size);
 				}
 			}
@@ -354,6 +361,68 @@ public:
 		std::cout << "Max segment lenght:" << max_len << std::endl;
 	}
 #if 1
+	void write_segments_and_alt(std::vector<std::vector<int16_t> > &elev)
+	{
+		static const int factor = 8;
+		int map_size = water_size * factor;
+		std::vector<std::vector<unsigned char> > map(map_size,std::vector<unsigned char>(map_size,0));
+		for(int r=0;r<water_size-1;r++) {
+			for(int c=0;c<water_size-1;c++) {
+				for(int dr=0;dr<factor;dr++) {
+					for(int dc=0;dc<factor;dc++) {
+						int v00 = elev[water_size-r-1][c];
+						int v01 = elev[water_size-r-1][c+1];
+						int v10 = elev[water_size-r-2][c];
+						int v11 = elev[water_size-r-2][c+1];
+						int v0 = ((factor - dc) * v00 + dc * v01 + factor/2) / factor;
+						int v1 = ((factor - dc) * v10 + dc * v11 + factor/2) / factor;
+						int v  = ((factor - dr) * v0  + dr * v1  + factor/2) / factor;
+						map[r*factor+dr][c*factor+dc]=v + 128;
+					}
+				}
+				if(internal_pixel(r,c) == land_mark)
+					map[r*factor][c*factor]=255;
+				else
+					map[r*factor][c*factor]=0;
+			}
+		}
+		for(segment const &s : segments) {
+			double y0 = s.r0 * factor;
+			double y1 = s.r1 * factor;
+			double x0 = s.c0 * factor;
+			double x1 = s.c1 * factor;
+			if(fabs(x0-x1) > fabs(y0-y1)) {
+				double A = (y1-y0) / (x1-x0);
+				double B = y0 - x0 * A;
+				if(x0 > x1)
+					std::swap(x0,x1);
+				int xs=round(x0);
+				int xe=round(x1);
+				assert(xs<=xe);
+				for(int x=xs;x<=xe;x++) {
+					int y=round(A * x + B);
+					if(x>=0 && x<map_size && y>=0 && y<map_size)
+						map[y][x]=255;
+				}
+			}
+			else {
+				double A = (x1-x0) / (y1-y0);
+				double B = x0 - y0*A;
+				if(y0 > y1)
+					std::swap(y0,y1);
+				for(int y=round(y0);y<=round(y1);y++) {
+					int x=round(A * y + B);
+					if(x>=0 && x<map_size && y>=0 && y<map_size)
+						map[y][x]=255;
+				}
+				
+			}
+		}
+		std::ofstream f("alt.pgm",std::ios::binary);
+		f<<"P5 " << map_size << " " << map_size << " 255\n";
+		for(int r=map_size-1;r>=0;r--)
+			f.write(reinterpret_cast<char *>(&map[r][0]),map_size);
+	}
     void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope)
     {
 		std::ofstream f("rep.pgm",std::ios::binary);
@@ -377,7 +446,6 @@ public:
 		}
 		for(int r=0;r<water_size;r++) {
 			int elev_r = water_size - r - 1;
-			std::cout << r << std::endl;
 			for(int c=0;c<water_size;c++) {
 				int pos = water_size * r + c;
 				int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
@@ -392,6 +460,7 @@ public:
 				f<< c;
 			}
 		}
+		write_segments_and_alt(elev);
 		return;
     }
 
@@ -821,20 +890,24 @@ private:
 		}
 	}
 
-	bool get_intersection_point(int y,point p1,point p2,int &x)
+	bool get_intersection_point(int r,double y,point p1,point p2,double &x)
 	{
-		int y0 = p1.y - y;
-		int y1 = p2.y - y;
-		int x0 = p1.x;
-		int x1 = p2.x;
+		y+=0.005;
+		int ymin = std::min(p1.y,p2.y);
+		int ymax = std::max(p1.y,p2.y);
+		if(!(ymin < y && y< ymax))
+			return false;
+		if(r==2048) {
+			printf("Line y=%f {%d,%d}->{%d,%d}\n",y,p1.y,p1.x,p2.y,p2.x);
+		}
+		double y0 = p1.y - y;
+		double y1 = p2.y - y;
+		double x0 = p1.x;
+		double x1 = p2.x;
 
 		// ensure we never exactly on the line/vertix
-		y0 = y0*2+1;
-		y1 = y1*2+1;
-
-		// line does not cross
-		if((y0 > 0 && y1 >0) || (y0 < 0 && y1 < 0))
-			return false;
+		//y0 = y0+0.05;
+		//y1 = y1+0.05;
 		
 		double x_fp = (x0 * double (y1-y0) - y0 * double(x1-x0)) / (y1 - y0);
 
@@ -847,7 +920,7 @@ private:
 		else if(x_fp > max_range)
 			x_fp = max_range;
 		
-		x = int(round(x_fp));
+		x = x_fp;
 		return true;
 	}
 
@@ -931,10 +1004,10 @@ private:
                 hdr.east = fix_longitude_sign(hdr.east);
             }
             
-			west_col = int(round(lon_2_col * (hdr.west - lon1)));
-			east_col = int(round(lon_2_col * (hdr.east - lon1)));
-			north_row = int(round(lat_2_row * (hdr.north - lat1)));
-			south_row = int(round(lat_2_row * (hdr.south - lat1)));
+			west_col = int(floor(lon_2_col * (hdr.west - lon1)))-1;
+			east_col = int(ceil(lon_2_col * (hdr.east - lon1)))-1;
+			north_row = int(ceil(lat_2_row * (hdr.north - lat1)))+1;
+			south_row = int(floor(lat_2_row * (hdr.south - lat1)))+1;
 			rmin = range_limit(south_row,0,water_size - 1);
 			rmax = range_limit(north_row,0,water_size - 1);
 			cmin = range_limit(west_col,0,water_size - 1);
