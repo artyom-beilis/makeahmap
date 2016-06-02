@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 2.8)
 
 # MinGW Specific
-set(CMAKE_CXX_FLAGS "-std=c++0x -Wall -m32 -DDLL_EXPORT -DCURL_STATICLIB")
-set(CMAKE_RC_FLAGS " -F pe-i386")
+if(WINDOWS)
+	set(CMAKE_CXX_FLAGS "-std=c++0x -Wall -m32 -DDLL_EXPORT -DCURL_STATICLIB")
+	set(CMAKE_RC_FLAGS " -F pe-i386")
+else()
+	set(CMAKE_CXX_FLAGS "-std=c++11 -Wall")
+endif()
 
 # Libraries
 
@@ -18,10 +22,19 @@ include_directories("${CURL_INC}")
 include_directories("${ZLIB_INC}")
 include_directories("${TIFF_INC}")
 
+set(EXTRASRC )
+if(WINDOWS)
+	set(EXTRASRC makeahmap.rc)
+endif()
+
 add_executable(makeahmap
 	makeahmap.cpp
 	downloader.cpp
-	makeahmap.rc
+	${EXTRASRC}
 	)
 
-target_link_libraries(makeahmap  ${CURL} winmm wldap32 ws2_32 ${TIFF} ${ZLIB})
+if(WINDOWS)
+	target_link_libraries(makeahmap  ${CURL} winmm wldap32 ws2_32 ${TIFF} ${ZLIB})
+else()
+	target_link_libraries(makeahmap  ${CURL}  ${TIFF} ${ZLIB})
+endif()

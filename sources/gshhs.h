@@ -58,8 +58,8 @@ struct water_properties {
         max_level(-1),
         default_width(1),
         level_to_width({ { 1, 6 }, { 2, 5 }, { 3 , 4 } , { 4 , 3 }, { 5, 3} , { 5 , 2 } }),
-        colors({0,0,0,0}),
-        depth_range({0,0,0,0})
+        colors(),
+        depth_range()
     {
         lat_shift = 0;
         lon_shift = 0;
@@ -425,7 +425,7 @@ public:
 	}
     void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope)
     {
-		std::ofstream f("rep.pgm",std::ios::binary);
+		//std::ofstream f("rep.pgm",std::ios::binary);
 		f<<"P5 " << water_size << " " << water_size << " 255\n";
 		static const int alt_limit = 100;
 		double alt_for_cell = slope * 660;
@@ -456,8 +456,8 @@ public:
 				int idist = int(round(dist[r][c] * alt_for_cell * sig));
 				idist = std::max(-alt_limit,std::min(alt_limit,idist));
 				elev[elev_r][c] = idist;
-				unsigned char c=idist + 100;
-				f<< c;
+				unsigned char output=idist + 100;
+				f<< output;
 			}
 		}
 		write_segments_and_alt(elev);
