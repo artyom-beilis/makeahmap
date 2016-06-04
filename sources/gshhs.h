@@ -21,7 +21,8 @@
  */
 
 #pragma once 
-
+#include "surface.h"
+#include <chrono>
 #include "bmp.h"
 #include "fileio.h"
 #include "downloader.h"
@@ -423,11 +424,97 @@ public:
 		for(int r=map_size-1;r>=0;r--)
 			f.write(reinterpret_cast<char *>(&map[r][0]),map_size);
 	}
+
+
+	static const int alt_limit = 30;
+
+
+
     void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope)
     {
-		//std::ofstream f("rep.pgm",std::ios::binary);
+        std::vector<std::vector<int16_t> > calc_alt(water_size,std::vector<int16_t>(water_size));
+	    std::vector<std::vector<float> > prev_values;
+        calc_elevation_boundaries(calc_alt,slope);
+        for(int N=256;N<=water_size;N*=2) {
+            std::vector<std::vector<char> > bmask(N,std::vector<char>(N));
+            std::vector<std::vector<float> > bvalues(N,std::vector<float>(N));
+            int factor = water_size / N;
+            for(int rc=0;rc<N;rc++) {
+                bmask[rc][0]=bmask[rc][N-1]=bmask[0][rc]=bmask[N-1][rc]=1;
+            }
+            for(int r=1;r<N-1;r++) {
+                for(int c=1;c<N-1;c++) {
+                    if(calc_alt[r*factor][c*factor]<alt_limit) {
+                        bmask[r][c]=1;
+                        bvalues[r][c]=elev[r*factor][c*factor];
+                    }
+                    else {
+                        bmask[r][c]=0;
+                        float val = 0;
+                        if(!prev_values.empty()) {
+                            if((r&1)==0 && (c&1)==0)
+                                val=prev_values[r/2][c/2];
+                            else if((r&1) == 0) 
+                                val=(prev_values[r/2][c/2] + prev_values[r/2][c/2+1])/2;
+                            else if((c&1) == 0) 
+                                val=(prev_values[r/2][c/2] + prev_values[r/2+1][c/2])/2;
+                            else
+                                val=(prev_values[r/2][c/2] + prev_values[r/2][c/2+1] +
+                                        prev_values[r/2][c/2] + prev_values[r/2+1][c/2])/4;
+                        }
+                        bvalues[r][c]=val;
+                    }
+                }
+            }
+            solve_surface(bmask,bvalues,0.5f);
+            prev_values.swap(bvalues);
+        }
+        float minv=0;
+        float maxv=0;
+        for(int r=0;r<water_size;r++) {
+            for(int c=0;c<water_size;c++) {
+                minv=std::min(minv,prev_values[r][c]);
+                maxv=std::max(maxv,prev_values[r][c]);
+            }
+        }
+        float amax = std::max(fabs(minv),fabs(maxv));
+        std::cout << "Corr range max=" << maxv << " min="<<minv << std::endl;
+        std::vector<std::vector<int16_t> > ndiff(water_size,std::vector<int16_t>(water_size));
+        std::ofstream mem("mem.pgm",std::ios::binary);
+        std::ofstream neg("neg.pgm",std::ios::binary);
+		mem<<"P5 " << water_size << " " << water_size << " 255\n";
+		neg<<"P5 " << water_size << " " << water_size << " 255\n";
+        int16_t max_diff = 0;
+        for(int r=0;r<water_size;r++) {
+            for(int c=0;c<water_size;c++) {
+                int orig_alt = elev[r][c];
+                if(calc_alt[r][c]<alt_limit) {
+                    elev[r][c]=calc_alt[r][c];
+                }
+                else {
+                    elev[r][c]=elev[r][c]-prev_values[r][c]+alt_limit;
+                    if(elev[r][c]<alt_limit) {
+                        if(orig_alt >= 0) {
+                            ndiff[r][c] = alt_limit - elev[r][c];
+                            max_diff=std::max(ndiff[r][c],max_diff);
+                        }
+                        elev[r][c]=alt_limit;
+                    }
+                }
+                float v=(prev_values[r][c]-minv) / (maxv-minv) * 254;
+                unsigned char color=static_cast<unsigned char>(v);
+                mem<<color;
+            }
+        }
+        std::cout << "Maximal negative diff = " << max_diff << std::endl;
+        for(int r=0;r<water_size;r++)
+            for(int c=0;c<water_size;c++)
+                neg << static_cast<unsigned char>(ndiff[r][c]*255/max_diff);
+    }
+    void calc_elevation_boundaries(std::vector<std::vector<int16_t> > &elev,double slope)
+    {
+		std::ofstream f("rep.pgm",std::ios::binary);
 		f<<"P5 " << water_size << " " << water_size << " 255\n";
-		static const int alt_limit = 100;
 		double alt_for_cell = slope * 660;
 		double max_dist = alt_limit / alt_for_cell + 1;
 		std::vector<std::vector<double> > dist(	water_size,std::vector<double>(water_size,max_dist));
@@ -460,7 +547,7 @@ public:
 				f<< output;
 			}
 		}
-		write_segments_and_alt(elev);
+		//write_segments_and_alt(elev);
 		return;
     }
 

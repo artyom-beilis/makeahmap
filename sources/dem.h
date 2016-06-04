@@ -230,8 +230,8 @@ namespace dem {
 
                 double v = (c0r0 * cw0 + c1r0 * cw1) * rw0 + (c0r1 * cw0 + c1r1 * cw1) * rw1;
                 int iv = int(round(v * 3.28084));
-                if(iv < 0)
-                    iv = 0;
+                //if(iv < 0)
+                //    iv = 0;
                 elevations[r][c]=iv;
             }
         }

@@ -2,6 +2,7 @@
 #include <CL/cl.h>
 #include <stdexcept>
 #include <ostream>
+#include <iostream>
 #include <vector>
 
 #define PRINT_DEVICE
