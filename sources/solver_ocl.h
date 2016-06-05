@@ -221,27 +221,3 @@ public:
 	size_t last_res_size_,last_local_size_;
 };
 
-
-
-#ifdef TEST
-
-int main()
-{
-	try {
-		eq_solver solver;
-		solver.init_matrix(2,3);
-		solver.add(0,0,1.0);
-		solver.add(0,1,-0.2);
-		solver.add(1,0,-0.2);
-		solver.add(1,1,1.0);
-		float x0[2]={0,0};
-		float b[2]={1.2,3.1};
-		solver.solve(b,x0,0.00000001);
-		printf("%f %f\n",x0[0],x0[1]);
-	}
-	catch(std::exception const &e) {
-		fprintf(stderr,"Fail:%s\n",e.what());
-	}
-}
-
-#endif
