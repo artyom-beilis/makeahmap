@@ -12,16 +12,14 @@
 class eq_solver { 
 public:
 	struct row {
-		cl_int4   c;
-		cl_float4 m;
+		cl_short4   c;
 	};
 	void init_matrix(size_t n)
 	{
 		rows_.resize(n);
 		for(size_t i=0;i<n;i++) {
 			for(int j=0;j<4;j++) {
-				rows_[i].c.s[j]=i;
-				rows_[i].m.s[j]=0.0f;
+				rows_[i].c.s[j]=0;
 			}
 		}
 	}
@@ -31,10 +29,10 @@ public:
 	{
 		row &ind = rows_[r];
 		int i;
+		assert(labs(r-c) < 32767);
 		for(i=0;i<4;i++) {
-			if(ind.c.s[i]==r) {
-				ind.c.s[i]=c;
-				ind.m.s[i]=-0.25f;
+			if(ind.c.s[i]==0) {
+				ind.c.s[i]=c - r;
 				break;
 			}
 		}
@@ -50,8 +48,7 @@ public:
 	{
 		ctx_.load(R"xxx(
 			typedef struct row {
-				int4 c;
-				float4 m;
+				short4 c;
 			} row;
 			__kernel void matrix_mpl(
 				int n,
@@ -63,8 +60,14 @@ public:
 				if(r >= n) 
 					return;
 				__global const row *cr = rows + r;
-				float4 cv = (float4)( vin[cr->c.x],vin[cr->c.y],vin[cr->c.z],vin[cr->c.w] );
-				vout[r] = vin[r] + dot(cr->m,cv);
+				float4 cvA = (float4)( vin[cr->c.x + r],vin[cr->c.y + r],vin[cr->c.z + r ],vin[cr->c.w + r] );
+				float4 cvB = (float4)( 
+					(cr->c.x != 0 ? -0.25f : 0.0),
+					(cr->c.y != 0 ? -0.25f : 0.0),
+					(cr->c.z != 0 ? -0.25f : 0.0),
+					(cr->c.w != 0 ? -0.25f : 0.0) 
+				);
+				vout[r] = vin[r] + dot(cvA,cvB);
 			};
 			__kernel void dot_prod(
 				int N,
@@ -147,8 +150,11 @@ public:
 	float dot_product(memory_object<float> &a,memory_object<float> &b,int N)
 	{
 		static size_t local = 0;
-		if(local == 0)
+		if(local == 0) {
 			local = dot_prod_.get_local_workgroup();
+			if(local > 128)
+				local = 128;
+		}
 		size_t res_size  = (N + local - 1)/local;
 		if(last_res_size_ != res_size) {
 			p1_.reset(new memory_object<float>(ctx_,res_size));
@@ -163,7 +169,7 @@ public:
 		dot_prod_(N,a,b,local_memory(sizeof(float)*local),*p1_);
 
 		memory_object<float> *src= p1_.get(), *dst = p2_.get();
-		
+
 		while(res_size > 1) {
 			vsum_.local(local);
 			vsum_(res_size,*src,local_memory(sizeof(float)*local),*dst);
