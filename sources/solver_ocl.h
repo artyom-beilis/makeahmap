@@ -175,7 +175,7 @@ public:
 		return s1;
 	}
 
-	void solve(float const *b_in,float *x0_in,float thresh=1e-6,int limit=-1)
+	int solve(float const *b_in,float *x0_in,float thresh=1e-6,int limit=-1)
 	{
 		int N = rows_.size();
 		if(limit==-1)
@@ -209,7 +209,7 @@ public:
 			rsold = rsnew;
 		}
 		x.copy_to_host(x0_in,N);
-		std::cout << "Iterations " << it << " error " << sqrt(rsnew) << std::endl;
+		return it;
 	}
 
 	context_with_program ctx_;

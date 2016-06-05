@@ -1,13 +1,38 @@
 #include "surface.h"
-//#define USE_CPU
 #ifdef USE_CPU
+#ifdef USE_OMP
+#include <omp.h>
+#endif
 #include "solver.h"
 #else
 #include "solver_ocl.h"
 #endif
 #include <iostream>
+#include <sstream>
 #include <chrono>
-void solve_surface(std::vector<std::vector<char> > const &bmask,std::vector<std::vector<float> > &bvalues,float thresh)
+
+struct surface_solver::data {
+#ifndef USE_CPU	
+	eq_solver slv;
+#endif	
+};
+
+surface_solver::surface_solver() : impl(new data()) {}
+surface_solver::~surface_solver() {}
+
+#ifdef USE_CPU
+std::string surface_solver::name()
+{
+	return solver_name();
+}
+#else
+std::string surface_solver::name()
+{
+	return "OpenCL: " + impl->slv.context().name();
+}
+#endif
+
+std::pair<int,double> surface_solver::run(std::vector<std::vector<char> > const &bmask,std::vector<std::vector<float> > &bvalues,float thresh)
 {
 	int N=bmask.size();
 	std::vector<std::pair<int,int> > index;
@@ -29,14 +54,8 @@ void solve_surface(std::vector<std::vector<char> > const &bmask,std::vector<std:
 	sparce_matrix X;
 	X.reserve(variables);
 	sparce_matrix &Matrix = X;
-#elif defined USE_VIE
-	sp Matrix;
-	Matrix.init(variables);
 #else
-	static std::unique_ptr<eq_solver> slv_ptr;
-	if(!slv_ptr)
-		slv_ptr.reset(new eq_solver());	
-	eq_solver &Matrix = *slv_ptr;
+	eq_solver &Matrix = impl->slv;
 	Matrix.init_matrix(variables);
 #endif	
 	std::vector<float> y(variables,0);
@@ -59,18 +78,17 @@ void solve_surface(std::vector<std::vector<char> > const &bmask,std::vector<std:
 
 	auto start = std::chrono::high_resolution_clock::now();
 #ifdef USE_CPU	
-	solve(variables,X,y.data(),x0.data(),thresh,variables);
-#elif defined USE_VIE
-	solve(variables,Matrix,y,x0,thresh,N);	
+	int iterations = solve(variables,X,y.data(),x0.data(),thresh,variables);
 #else	
-	Matrix.solve(y.data(),x0.data(),thresh,variables);
+	int iterations = Matrix.solve(y.data(),x0.data(),thresh,variables);
 #endif
 	auto end = std::chrono::high_resolution_clock::now();
-	std::cout << std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1> > >(end-start).count() << std::endl;
+	double time = std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1> > >(end-start).count();
 
 	for(int i=0;i<variables;i++) {
 		bvalues[index[i].first][index[i].second]=x0[i];
 	}
+	return std::pair<int,double>(iterations,time);
 }
 
 

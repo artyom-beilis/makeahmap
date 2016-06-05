@@ -355,11 +355,10 @@ public:
 		}
 		close();
 		double max_len = 0;
-		std::cout << "Total segments:" << segments.size() << std::endl;
 		for(auto s : segments) {
 			max_len = std::max(max_len,s.length);
 		}
-		std::cout << "Max segment lenght:" << max_len << std::endl;
+		std::cout << "-- Total segments:" << segments.size() << ", maximal segment lenght:" << max_len << std::endl;
 	}
 #if 1
 	void write_segments_and_alt(std::vector<std::vector<int16_t> > &elev)
@@ -426,16 +425,21 @@ public:
 	}
 
 
-	static const int alt_limit = 30;
-
 
 
     void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope)
     {
+	    static const int alt_limit = 30;
+
         std::vector<std::vector<int16_t> > calc_alt(water_size,std::vector<int16_t>(water_size));
 	    std::vector<std::vector<float> > prev_values;
-        calc_elevation_boundaries(calc_alt,slope);
+        std::cout << "-- Calculating water bodies to altitudes\n";
+        calc_elevation_boundaries(calc_alt,slope,alt_limit);
+        surface_solver solver;
+        std::cout << "-- Calculating altitude modifications to bring water to 0 feet using " << solver.name() << "\n";
+        double total = 0;
         for(int N=256;N<=water_size;N*=2) {
+            std::cout<< "--- Optimizing for surface of " << N << "x" << N  << " vertices... " << std::flush;
             std::vector<std::vector<char> > bmask(N,std::vector<char>(N));
             std::vector<std::vector<float> > bvalues(N,std::vector<float>(N));
             int factor = water_size / N;
@@ -466,9 +470,12 @@ public:
                     }
                 }
             }
-            solve_surface(bmask,bvalues,0.5f);
+            std::pair<int,double> stat = solver.run(bmask,bvalues,0.5f);
+            total+=stat.second;
+            std::cout <<" optimized in " << stat.second << " s and " << stat.first << " iterations" << std::endl;
             prev_values.swap(bvalues);
         }
+        std::cout << "--- Total optimization time " << total << " s"<< std::endl;
         float minv=0;
         float maxv=0;
         for(int r=0;r<water_size;r++) {
@@ -477,8 +484,7 @@ public:
                 maxv=std::max(maxv,prev_values[r][c]);
             }
         }
-        float amax = std::max(fabs(minv),fabs(maxv));
-        std::cout << "Corr range max=" << maxv << " min="<<minv << std::endl;
+        std::cout << "--- Maximal correction  range max=" << maxv << " min="<<minv << std::endl;
         std::vector<std::vector<int16_t> > ndiff(water_size,std::vector<int16_t>(water_size));
         std::ofstream mem("mem.pgm",std::ios::binary);
         std::ofstream neg("neg.pgm",std::ios::binary);
@@ -506,12 +512,12 @@ public:
                 mem<<color;
             }
         }
-        std::cout << "Maximal negative diff = " << max_diff << std::endl;
+        std::cout << "--- Maximal land modificationt to below 0 alt " << max_diff << std::endl;
         for(int r=0;r<water_size;r++)
             for(int c=0;c<water_size;c++)
                 neg << static_cast<unsigned char>(ndiff[r][c]*255/max_diff);
     }
-    void calc_elevation_boundaries(std::vector<std::vector<int16_t> > &elev,double slope)
+    void calc_elevation_boundaries(std::vector<std::vector<int16_t> > &elev,double slope,int alt_limit)
     {
 		std::ofstream f("rep.pgm",std::ios::binary);
 		f<<"P5 " << water_size << " " << water_size << " 255\n";
@@ -984,9 +990,6 @@ private:
 		int ymax = std::max(p1.y,p2.y);
 		if(!(ymin < y && y< ymax))
 			return false;
-		if(r==2048) {
-			printf("Line y=%f {%d,%d}->{%d,%d}\n",y,p1.y,p1.x,p2.y,p2.x);
-		}
 		double y0 = p1.y - y;
 		double y1 = p2.y - y;
 		double x0 = p1.x;

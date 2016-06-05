@@ -280,7 +280,7 @@ void prepare_map()
             tmap[map_in[i][0]][j]=map_in[i][j+1];
     }
 	for(int i=0;map_type_in[i][0]!=-1;i++) {
-		std::cout << std::dec << map_type_in[i][0] << "->" << std::hex <<map_type_in[i][1] << std::dec << std::endl;
+		//std::cout << std::dec << map_type_in[i][0] << "->" << std::hex <<map_type_in[i][1] << std::dec << std::endl;
         map_type[map_type_in[i][0]] = map_type_in[i][1];
     }
 }
@@ -1524,9 +1524,8 @@ int main(int argc,char **argv)
             std::cout << "  Complete" << std::endl;
         }*/
         
-        std::cout << "- Updateing altitudes... " << std::flush;
+        std::cout << "- Updateing altitudes... " << std::endl;
         gen.update_elevations(elevations,water_to_land_slope);
-        std::cout << "Done" << std::endl;
         
         
 
@@ -1568,13 +1567,15 @@ int main(int argc,char **argv)
 #if defined(_WIN32) || defined(WIN32)
         std::cout << "Press Enter to exit..." << std::endl;
         std::cin.get();
-        return 0;
 #endif
+        return 0;
     }
     catch(std::exception const &e) {
         std::cerr << "\nError:" << e.what() << std::endl;
+#if defined(_WIN32) || defined(WIN32)
         std::cerr << "Press Enter to exit..." << std::endl;
         std::cin.get();
+#endif        
         return 1;
     }
     return 0;

@@ -4,8 +4,9 @@
 #include <ostream>
 #include <iostream>
 #include <vector>
+#include <sstream>
 
-#define PRINT_DEVICE
+//#define PRINT_DEVICE
 //#define ENABLE_PROF
 
 #ifdef ENABLE_PROF
@@ -47,8 +48,8 @@ public:
 
 class cl_error : public std::runtime_error {
 public:
-	cl_error(std::string const &msg) : std::runtime_error(msg) {}
-	cl_error(std::string const &msg,int code) : std::runtime_error(msg + ": " + std::to_string(code)) {}
+	cl_error(std::string const &msg) : std::runtime_error("OpenCL: " + msg) {}
+	cl_error(std::string const &msg,int code) : std::runtime_error("OpenCL: " + msg + ": " + std::to_string(code)) {}
 };
 
 
@@ -67,6 +68,26 @@ public:
 		clReleaseProgram(program_);
 		clReleaseCommandQueue(queue_);
 		clReleaseContext(context_);
+	}
+	std::string name()
+	{
+		std::string type;
+		cl_device_type dt;
+		clGetDeviceInfo(device_id_,CL_DEVICE_TYPE,sizeof(dt),&dt,0);
+		if(dt == CL_DEVICE_TYPE_GPU) 
+			type = "GPU";
+		else if(dt == CL_DEVICE_TYPE_CPU) 
+			type = "CPU (suboptimal!!!)";
+		else
+			type = "Unknown type";
+
+		char n[256]={};
+		clGetDeviceInfo(device_id_,CL_DEVICE_NAME,256,n,0);
+		unsigned int mcu=0;
+		clGetDeviceInfo(device_id_,CL_DEVICE_MAX_COMPUTE_UNITS,sizeof(mcu),&mcu,0);
+		std::ostringstream ss;
+		ss << type << ": " <<n << "; computing units=" << mcu;
+		return ss.str();
 	}
 	void load(char const *prg)
 	{
@@ -87,16 +108,17 @@ public:
 			clGetDeviceInfo(avail[i],CL_DEVICE_NAME,256,name,0);
 			unsigned int mcu=0;
 			clGetDeviceInfo(avail[i],CL_DEVICE_MAX_COMPUTE_UNITS,sizeof(mcu),&mcu,0);
-			std::cout << "Found Device: " << name << " compute units=" << mcu<< std::endl;
+			std::cout << "-- Device supporting OCL found: " << name << " compute units=" << mcu;
 #endif			
 			cl_device_type dt;
 			clGetDeviceInfo(avail[i],CL_DEVICE_TYPE,sizeof(dt),&dt,0);
 			if(dt == CL_DEVICE_TYPE_GPU) {
 #ifdef PRINT_DEVICE
-				std::cout << "Device is GPU, using it\n";
+				std::cout << "; device is GPU, using it";
 #endif				
 				device_id_ = avail[i];
 			}
+			std::cout << std::endl;
 		}
 
 		if(!(context_ = clCreateContext(0,1,&device_id_,NULL,NULL,&err)))
