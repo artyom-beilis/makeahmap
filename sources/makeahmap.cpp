@@ -782,7 +782,7 @@ unsigned altitude_to_bmp(std::string file,std::vector<std::vector<int16_t> > con
             int v=elev[i][j];
             if(v<0)
                 v=0;
-            row[j] = elev[i][j] * 255u / div;
+            row[j] = v * 255u / div;
         }
         f.write(&row[0],matrix_size);
     }

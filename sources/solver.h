@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <assert.h>
+#include <iostream>
 
 #ifdef USE_OMP
 
