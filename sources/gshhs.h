@@ -439,10 +439,10 @@ public:
         std::cout << "-- Calculating altitude modifications to bring water to 0 feet using " << solver.name() << "\n";
         double total = 0;
         for(int N=256;N<=water_size;N*=2) {
-            std::cout<< "--- Optimizing for surface of " << N << "x" << N  << " vertices... " << std::flush;
             std::vector<std::vector<char> > bmask(N,std::vector<char>(N));
             std::vector<std::vector<float> > bvalues(N,std::vector<float>(N));
             int factor = water_size / N;
+            int vertices = (N-1)*4;
             for(int rc=0;rc<N;rc++) {
                 bmask[rc][0]=bmask[rc][N-1]=bmask[0][rc]=bmask[N-1][rc]=1;
             }
@@ -453,6 +453,7 @@ public:
                         bvalues[r][c]=elev[r*factor][c*factor];
                     }
                     else {
+                        vertices++;
                         bmask[r][c]=0;
                         float val = 0;
                         if(!prev_values.empty()) {
@@ -470,6 +471,7 @@ public:
                     }
                 }
             }
+            std::cout<< "--- Optimizing for surface of " << std::setw(4) << N << "x" << std::setw(4) << N  << " " << std::setw(9) << vertices << " vertices... " << std::flush;
             std::pair<int,double> stat = solver.run(bmask,bvalues,0.5f);
             total+=stat.second;
             std::cout <<" optimized in " << stat.second << " s and " << stat.first << " iterations" << std::endl;
