@@ -6,6 +6,9 @@
 #include <assert.h>
 #include <iostream>
 #include <sstream>
+#define CPU_BARRIERS
+//#define USE_OMP
+
 #ifdef CPU_BARRIERS
 #include <thread>
 #include <pthread.h>
@@ -13,18 +16,18 @@
 
 
 class sparce_matrix {
+public:
 	struct row {
-		int   c[4];
+		int c[4];
 		float v[4];
 	};
-public:
 	void reserve(size_t n) 
 	{
 		rows_.resize(n);
 		for(size_t i=0;i<n;i++) {
 			for(int j=0;j<4;j++) {
 				rows_[i].c[j]=i;
-				rows_[i].v[j]=0.0f;
+				rows_[i].v[j]=0;
 			}
 		}
 	}
@@ -35,15 +38,15 @@ public:
 		for(i=0;i<4;i++) {
 			if(ind.c[i]==r) {
 				ind.c[i]=c;
-				ind.v[i]=-0.25;
+				ind.v[i]=-0.25f;
 				break;
 			}
 		}
 		assert(i<4);
 	}
-	void mpl(int N,float const *vin,float *vout) const;
+	float mpl(int N,float const *vin,float *vout) const;
 #ifdef CPU_BARRIERS
-	void mpl(int from,int to,float const *vin,float *vout) const;
+	float mpl(int from,int to,float const *vin,float *vout) const;
 #endif	
 
 private:
@@ -57,20 +60,24 @@ std::string solver_name()
 	return "CPU using OpenMP";
 }
 
-void sparce_matrix::mpl(int N,float const *vin,float *vout) const
+float sparce_matrix::mpl(int N,float const *vin,float *vout) const
 {
-	int size = rows_.size();
-	#pragma omp for
-	for(int i=0;i<size;i++) {
-		row const &r = rows_[i];
+	float pAp=0.0;
+	#pragma omp parallel for reduction(+:pAp)
+	for(int i=0;i<N;i++) {
+		row r = rows_[i];
 		float v[4]= { 
 			vin[r.c[0]],  
 			vin[r.c[1]],  
 			vin[r.c[2]],  
 			vin[r.c[3]]
 		};
-		vout[i]=vin[i] + (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
+		float p=vin[i];
+		float Ap = p + (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
+		vout[i]=Ap;
+		pAp+=p*Ap;
 	}
+	return pAp;
 }
 
 /// CPU OMP
@@ -100,20 +107,17 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 	
 	for(it=0;it<limit;it++) {
 		A.mpl(N,p,Ap);
-		float pAp=0;
-		#pragma omp parallel for reduction(+:pAp)
-		for(int i=0;i<N;i++)
-			pAp+=p[i]*Ap[i];
+		float pAp=A.mpl(N,p,Ap);
 		float alpha = rsold / pAp;
 		rsnew=0;
 		#pragma omp for
-		for(int i=0;i<N;i++)  {
+		for(int i=0;i<N;i++)  
 			x[i]+=alpha*p[i];
-			r[i]-=alpha*Ap[i];
-		}
 		#pragma omp parallel for reduction(+:rsnew)
 		for(int i=0;i<N;i++) {
-			rsnew +=r[i]*r[i];
+			float tmp = r[i] - alpha*Ap[i];
+			rsnew +=tmp*tmp;
+			r[i] = tmp;
 		}
 		if(rsnew < th2)
 			break;
@@ -132,21 +136,28 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 
 std::string solver_name()
 {
-	return "Multiple CPU with Barriers";
+	std::ostringstream ss;
+	ss << "CPU using " << std::thread::hardware_concurrency() << " threads\n";
+	return ss.str();
 }
 
-void sparce_matrix::mpl(int from,int to,float const *vin,float *vout) const
+float sparce_matrix::mpl(int from,int to,float const *vin,float *vout) const
 {
+	float sum=0;
 	for(int i=from;i<to;i++) {
-		row const &r = rows_[i];
+		row r = rows_[i];
 		float v[4]= { 
 			vin[r.c[0]],  
 			vin[r.c[1]],  
 			vin[r.c[2]],  
 			vin[r.c[3]]
 		};
-		vout[i]=vin[i] + (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
+		float x=vin[i];
+		float y=x+ (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
+		sum+=x*y;
+		vout[i]=y;
 	}
+	return sum;
 }
 
 float sum(float const *v,int n)
@@ -204,30 +215,28 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 
 	std::vector<float> pAp_acc(threads);
 	std::vector<float> rsnew_acc(threads);
+	std::vector<std::thread> tasks(threads);
 	barrier bar(threads);
 
 	int iters;
 	auto runner = [&](int from,int to,int id) {	
 		float rsold = grsold;
 		for(int it=0;it<limit;it++) {
-			A.mpl(from,to,p,Ap);
-			bar.wait();
-
-			float mypAp=0;
-			for(int i=from;i<to;i++)
-				mypAp+=p[i]*Ap[i];
+			float mypAp = A.mpl(from,to,p,Ap);
 			pAp_acc[id]=mypAp;
 			bar.wait();
 
 			float pAp = sum(pAp_acc.data(),threads);
+
 			float alpha = rsold / pAp;
-			for(int i=from;i<to;i++)  {
-				x[i]+=alpha*p[i];
-				r[i]-=alpha*Ap[i];
-			}
 			float myrsnew=0;
 			for(int i=from;i<to;i++) 
-				myrsnew +=r[i]*r[i];
+				x[i]+=alpha*p[i];
+			for(int i=from;i<to;i++) {
+				float tmp = r[i]-alpha*Ap[i];
+				myrsnew += tmp*tmp;
+				r[i]=tmp;
+			}
 			rsnew_acc[id] = myrsnew;
 			bar.wait();
 			float rsnew = sum(rsnew_acc.data(),threads);
@@ -244,7 +253,6 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 			bar.wait();
 		}
 	};
-	std::thread tasks[16];
 	int start = 0;
 	int chunk = (N + threads-1)/threads;
 	int id=0;
@@ -267,19 +275,25 @@ std::string solver_name()
 	return "CPU Single Thread";
 }
 
-void sparce_matrix::mpl(int N,float const *vin,float *vout) const
+float sparce_matrix::mpl(int N,float const *vin,float *vout) const
 {
 	int size = rows_.size();
+	float res = 0;
 	for(int i=0;i<size;i++) {
 		row const &r = rows_[i];
+
 		float v[4]= { 
 			vin[r.c[0]],  
 			vin[r.c[1]],  
 			vin[r.c[2]],  
 			vin[r.c[3]]
 		};
-		vout[i]=vin[i] + (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
+		float a = vin[i];
+		float b=a + (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
+		vout[i]=b;
+		res+=a*b;
 	}
+	return res;
 }
 
 // CPU single thread
@@ -306,20 +320,17 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 	}
 	int it;
 	float rsnew = 0;	
-	
+
 	for(it=0;it<limit;it++) {
-		A.mpl(N,p,Ap);
-		float pAp=0;
-		for(int i=0;i<N;i++)
-			pAp+=p[i]*Ap[i];
+		float pAp = A.mpl(N,p,Ap);
 		float alpha = rsold / pAp;
-		rsnew=0;
-		for(int i=0;i<N;i++)  {
+		for(int i=0;i<N;i++)  
 			x[i]+=alpha*p[i];
-			r[i]-=alpha*Ap[i];
-		}
+		rsnew=0;
 		for(int i=0;i<N;i++) {
-			rsnew +=r[i]*r[i];
+			float tmp = r[i] - alpha*Ap[i];
+			rsnew += tmp*tmp;
+			r[i]=tmp;
 		}
 		if(rsnew < th2)
 			break;
@@ -327,8 +338,6 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 		for(int i=0;i<N;i++)
 			p[i]=r[i]+factor*p[i];
 		rsold = rsnew;
-
-
 	}
 	return it;
 }

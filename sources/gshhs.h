@@ -789,10 +789,11 @@ public:
         water_generator *gen_;
     };
     
-	void load_rivers(std::string file_name,water_properties const &prop)
+	void load_rivers(std::string file_name,std::vector<std::vector<int16_t> > const &elev,water_properties const &prop)
 	{
         int lat_shift = int(round(prop.lat_shift*1e6));
         int lon_shift = int(round(prop.lon_shift*1e6));
+        double max_segment_length = 0.0;
 		open(file_name);
 		while(get()) {
 			int level = (hdr.flag & 255);
@@ -820,67 +821,15 @@ public:
 					continue;
 				}
 
-				draw_point(start,radius,i);
-				draw_point(end,radius,i);
-
-				if(labs(start.x - end.x) > labs(start.y - end.y)) {
-
-					int c_start = int(round((start.x - lon1) * lon_2_col));
-					int c_end   = int(round((end.x   - lon1) * lon_2_col));
-					
-					c_start = range_limit(c_start,cmin,cmax);
-					c_end   = range_limit(c_end,cmin,cmax);
-
-					if(c_start > c_end)
-						std::swap(c_start,c_end);
-
-					double a=double(end.y - start.y) / double(end.x-start.x);
-					double b=start.y - a * start.x;
-					
-					for(int c=c_start;c<=c_end;c++) {
-						double x = col_2_lon * c + lon1;
-						double y = a*x + b;
-                        draw_point(point(int(round(x)),int(round(y))),radius,i);
-                        /*
-						int r = int(round((y - lat1) * lat_2_row - half_width));
-						for(int rr=r;rr<=r+integer_width;rr++) {
-							if(rr >= 0 && rr<water_size) {
-								mark(river_mark,rr,c);
-							}
-						}*/
-					}
-				}
-				else if(start.y != end.y) {
-					
-					int r_start = int(round((start.y - lat1) * lat_2_row));
-					int r_end   = int(round((end.y   - lat1) * lat_2_row));
-					
-					r_start = range_limit(r_start,rmin,rmax);
-					r_end   = range_limit(r_end,rmin,rmax);
-
-					double a=double(end.x - start.x) / double(end.y - start.y);
-					double b=start.x - a * start.y;
-
-					if(r_start > r_end)
-						std::swap(r_start,r_end);
-					
-					for(int r=r_start;r<=r_end;r++) {
-						double y = row_2_lat * r + lat1;
-						double x = a*y + b;
-                        
-                        draw_point(point(int(round(x)),int(round(y))),radius,i);
-                        /*
-						int c = int(round((x - lon1) * lon_2_col - half_width));
-						if(c<0 || c>=water_size)
-							continue;
 						
-						for(int cc=c-width;cc<=c+width;cc++) {
-							if(cc >= 0 && cc<water_size) {
-								mark(river_mark,r,cc);
-							}
-						}*/
-					}
-				}
+				segment s;
+				s.r0 = lat_2_row * (start.y - lat1);
+				s.r1 = lat_2_row * (end.y   - lat1);
+				s.c0 = lon_2_col * (start.x - lon1);
+				s.c1 = lon_2_col * (end.x   - lon1);
+				s.calc_params();
+                
+                //int segment_alt = (alt(elev,s.r0,s.c0) + alt(elev,s.r1,s.c1)) / 2;
 
 			}
 		}
