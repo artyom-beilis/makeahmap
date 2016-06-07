@@ -25,12 +25,19 @@ std::string surface_solver::name()
 {
 	return solver_name();
 }
+
 #else
 std::string surface_solver::name()
 {
 	return "OpenCL: " + impl->slv.context().name();
 }
 #endif
+
+int surface_solver::bytes_per_it()
+{
+	return get_bytes_per_it();
+}
+
 
 std::pair<int,double> surface_solver::run(std::vector<std::vector<char> > const &bmask,std::vector<std::vector<float> > &bvalues,float thresh)
 {

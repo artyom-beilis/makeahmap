@@ -474,7 +474,8 @@ public:
             std::cout<< "--- Optimizing for surface of " << std::setw(4) << N << "x" << std::setw(4) << N  << " " << std::setw(9) << vertices << " vertices... " << std::flush;
             std::pair<int,double> stat = solver.run(bmask,bvalues,0.5f);
             total+=stat.second;
-            std::cout <<" optimized in " << stat.second << " s and " << stat.first << " iterations" << std::endl;
+            double band=double(solver.bytes_per_it()) * stat.first * vertices / stat.second / (1024*1024*1024);
+            std::cout <<" optimized in " << std::setw(8) << stat.second << " s and "<< std::setw(6) << stat.first << " iterations with memory bandwidth of " << band << " GB/s"  << std::endl;
             prev_values.swap(bvalues);
         }
         std::cout << "--- Total optimization time " << total << " s"<< std::endl;

@@ -9,6 +9,9 @@
 
 #define SRC(x) #x
 
+#define LOCAL_BLOCK	128
+#define LOCAL_BLOCK_STR "128"
+
 class eq_solver { 
 public:
 	struct row {
@@ -24,7 +27,6 @@ public:
 		}
 	}
 	std::vector<row> rows_;
-	int prev_r_;
 	void add(int r,int c)
 	{
 		row &ind = rows_[r];
@@ -41,12 +43,14 @@ public:
 	context_with_program &context() { return ctx_; }
 	eq_solver() : 
 		mpl_(ctx_),
+		mpl_prod_(ctx_),
 		dot_prod_(ctx_),
 		vsum_(ctx_),
-		b_min_r_to_r_and_p_(ctx_),add_vectors_(ctx_),add_vectors_to_(ctx_),
-		last_res_size_(),last_local_size_()
+		b_min_r_to_r_and_p_(ctx_),add_vectors_(ctx_),add_vectors_and_prod_(ctx_),add_vectors_to_(ctx_)
 	{
-		ctx_.load(R"xxx(
+		ctx_.load(
+			"#define LOCAL_BLOCK " LOCAL_BLOCK_STR	"\n"
+			R"xxx(
 			typedef struct row {
 				short4 c;
 			} row;
@@ -68,23 +72,14 @@ public:
 					(cr->c.w != 0 ? -0.25f : 0.0) 
 				);
 				vout[r] = vin[r] + dot(cvA,cvB);
-			};
-			__kernel void dot_prod(
-				int N,
-				__global const float *A,
-				__global const float *B,
-				__local float *l_sum,
-				__global float *r)
-			{  
-				int gid = get_global_id(0);
+			}
+
+			void reduce(__local float *l_sum,__global float *r)
+			{
+				barrier(CLK_LOCAL_MEM_FENCE);
 				int lid = get_local_id(0);  
 				int wgid = get_group_id(0); 
 				int dist = get_local_size(0);
-				if(gid < N) 
-					l_sum[lid] = A[gid]*B[gid]; 
-				else
-					l_sum[lid] = 0;
-				barrier(CLK_LOCAL_MEM_FENCE);
 				while(dist > 1) { 
 					dist >>=1;
 					if(lid < dist)  {
@@ -96,6 +91,51 @@ public:
 					r[wgid] = l_sum[0];
 			}
 
+			__kernel void matrix_mpl_and_prod(
+				int n,
+				__global const row *rows,
+				__global const float *vin,
+				__global float *vout,
+				__global float *prod)
+			{                          
+				__local float l_sum[LOCAL_BLOCK];
+				int r = get_global_id(0);
+				int lid = get_local_id(0);  
+				if(r < n) {
+					__global const row *cr = rows + r;
+					float4 cvA = (float4)( vin[cr->c.x + r],vin[cr->c.y + r],vin[cr->c.z + r ],vin[cr->c.w + r] );
+					float4 cvB = (float4)( 
+						(cr->c.x != 0 ? -0.25f : 0.0),
+						(cr->c.y != 0 ? -0.25f : 0.0),
+						(cr->c.z != 0 ? -0.25f : 0.0),
+						(cr->c.w != 0 ? -0.25f : 0.0) 
+					);
+					float p = vin[r];
+					float Ap = p + dot(cvA,cvB);
+					vout[r] = Ap;
+					l_sum[lid] = p*Ap;
+				}
+				else
+					l_sum[lid] = 0.0f;
+				reduce(l_sum,prod);
+			}
+			__kernel void dot_prod(
+				int N,
+				__global const float *A,
+				__global const float *B,
+				__global float *r)
+			{ 
+				 
+				int gid = get_global_id(0);
+				int lid = get_local_id(0);
+				__local float l_sum[LOCAL_BLOCK];
+				if(gid < N) 
+					l_sum[lid] = A[gid]*B[gid]; 
+				else
+					l_sum[lid] = 0;
+				reduce(l_sum,r);
+			}
+
 			__kernel void b_min_r_to_r_and_p(int N,__global const float *b,__global float *r,__global float *p)
 			{
 				int id = get_global_id(0);
@@ -105,32 +145,37 @@ public:
 					p[id]=diff;
 				}
 			}
-			__kernel void vsum(int N,__global float const *A,__local float *l_sum,__global float *R)
+			__kernel void vsum(int N,__global float const *A,__global float *R)
 			{
+				__local float l_sum[LOCAL_BLOCK];
 				int gid = get_global_id(0);
-				int lid = get_local_id(0);  
-				int wgid = get_group_id(0); 
-				int dist = get_local_size(0);
+				int lid = get_local_id(0);
 				if(gid < N) 
 					l_sum[lid] = A[gid];
 				else
 					l_sum[lid] = 0;
-				barrier(CLK_LOCAL_MEM_FENCE);
-				while(dist > 1) { 
-					dist >>=1;
-					if(lid < dist)  {
-						l_sum[lid]+=l_sum[lid+dist];
-					}
-					barrier(CLK_LOCAL_MEM_FENCE);
-				}
-				if(lid == 0)
-					R[wgid] = l_sum[0];
+				reduce(l_sum,R);
 			}
 			__kernel void add_vectors(int N,__global float *x,__global float const *b,float factor)
 			{
 				int gid = get_global_id(0);
 				if(gid < N)
 					x[gid]+=b[gid]*factor;
+			}
+			__kernel void add_vectors_and_prod(int N,__global float *x,__global float const *b,float factor,__global float *prod)
+			{
+				int gid = get_global_id(0);
+				int lid = get_local_id(0);
+				__local float l_sum[LOCAL_BLOCK];
+				if(gid < N) {
+					float val = x[gid] + b[gid]*factor;
+					x[gid]=val;
+					l_sum[lid] = val*val;
+				}
+				else {
+					l_sum[lid]=0;
+				}
+				reduce(l_sum,prod);
 			}
 			__kernel void add_vectors_to(int N,__global float *me,float factor,__global float const *other)
 			{
@@ -141,44 +186,38 @@ public:
 		)xxx");
 
 		mpl_.assign("matrix_mpl");
+
+		mpl_prod_.assign("matrix_mpl_and_prod");
+		mpl_prod_.local(LOCAL_BLOCK);
+
 		dot_prod_.assign("dot_prod");
+		dot_prod_.local(LOCAL_BLOCK);
+
 		vsum_.assign("vsum");
+		vsum_.local(LOCAL_BLOCK);
+
 		b_min_r_to_r_and_p_.assign("b_min_r_to_r_and_p");
 		add_vectors_.assign("add_vectors");
+
+		add_vectors_and_prod_.assign("add_vectors_and_prod");
+		add_vectors_and_prod_.local(LOCAL_BLOCK);
+
 		add_vectors_to_.assign("add_vectors_to");
 	}
-	float dot_product(memory_object<float> &a,memory_object<float> &b,int N)
+	float post_reduce(memory_object<float> &rsrc,memory_object<float> &rtgt,int N)
 	{
-		static size_t local = 0;
-		if(local == 0) {
-			local = dot_prod_.get_local_workgroup();
-			if(local > 128)
-				local = 128;
-		}
-		size_t res_size  = (N + local - 1)/local;
-		if(last_res_size_ != res_size) {
-			p1_.reset(new memory_object<float>(ctx_,res_size));
-			last_res_size_ = res_size;
-		}
-		if(last_local_size_ != local) {
-			p2_.reset(new memory_object<float>(ctx_,(res_size+local-1)/local));
-			last_local_size_ = local;
-		}
-
-		dot_prod_.local(local);
-		dot_prod_(N,a,b,local_memory(sizeof(float)*local),*p1_);
-
-		memory_object<float> *src= p1_.get(), *dst = p2_.get();
-
+		memory_object<float> *src=&rsrc;
+		memory_object<float> *tgt=&rtgt;
+		int res_size = (N + LOCAL_BLOCK - 1) / LOCAL_BLOCK;
 		while(res_size > 1) {
-			vsum_.local(local);
-			vsum_(res_size,*src,local_memory(sizeof(float)*local),*dst);
-			std::swap(src,dst);
-			res_size = (res_size + local - 1) / local;
+			vsum_(res_size,*src,*tgt);
+			std::swap(src,tgt);
+			res_size = (res_size + LOCAL_BLOCK - 1) / LOCAL_BLOCK;
 		}
-		float s1=0.0;
-		src->copy_to_host(&s1,1);
-		return s1;
+		float r=0.0;
+		src->copy_to_host(&r,1);
+		return r;
+		
 	}
 
 	int solve(float const *b_in,float *x0_in,float thresh=1e-6,int limit=-1)
@@ -192,22 +231,26 @@ public:
 		memory_object<float> Ap(ctx_,N);
 		memory_object<float> p(ctx_,N);
 		memory_object<float> x(ctx_,x0_in,N);
+		size_t r1 = (N+LOCAL_BLOCK-1)/LOCAL_BLOCK;
+		size_t r2 = (r1+LOCAL_BLOCK-1)/LOCAL_BLOCK;
+		memory_object<float> rd1(ctx_,r1);
+		memory_object<float> rd2(ctx_,r2);
 
 		float th2=thresh*thresh;
 		mpl_(N,Mrows,x,r);
 		b_min_r_to_r_and_p_(N,b,r,p);
-		
 
-		float rsold = dot_product(r,r,N);
+		dot_prod_(N,r,r,rd1);
+		float rsold = post_reduce(rd1,rd2,N);
 		int it=0;
 		float rsnew = 0;
 		for(it=0;it<limit;it++) {
-			mpl_(N,Mrows,p,Ap);
-			float pAp = dot_product(p,Ap,N);
+			mpl_prod_(N,Mrows,p,Ap,rd1);
+			float pAp = post_reduce(rd1,rd2,N);
 			float alpha = rsold / pAp;
 			add_vectors_(N,x,p,alpha);
-			add_vectors_(N,r,Ap,-alpha);
-			rsnew = dot_product(r,r,N);
+			add_vectors_and_prod_(N,r,Ap,-alpha,rd1);
+			rsnew = post_reduce(rd1,rd2,N);
 			if(rsnew < th2) 
 				break;
 			float factor = rsnew / rsold;
@@ -219,11 +262,15 @@ public:
 	}
 
 	context_with_program ctx_;
-	kernel mpl_;
+	kernel mpl_,mpl_prod_;
 	kernel dot_prod_;
 	kernel vsum_;
-	kernel b_min_r_to_r_and_p_,add_vectors_,add_vectors_to_;
-	std::unique_ptr<memory_object<float> > p1_,p2_;
-	size_t last_res_size_,last_local_size_;
+	kernel b_min_r_to_r_and_p_,add_vectors_,add_vectors_and_prod_,add_vectors_to_;
 };
+
+inline int get_bytes_per_it()
+{
+	return sizeof(eq_solver::row) + sizeof(float)* ( 1 + 3 + 3 + 3 + 3);
+}
+
 

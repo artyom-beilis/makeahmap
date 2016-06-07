@@ -1,0 +1,17 @@
+-- Calculating altitude modifications to bring water to 0 feet using OpenCL: GPU: GeForce GTX 960; computing units=8
+--- Optimizing for surface of  256x 256     42429 vertices...  optimized in    0.024 s and    243 iterations with memory bandwidth of 23.681 GB/s
+--- Optimizing for surface of  512x 512    169259 vertices...  optimized in    0.042 s and    226 iterations with memory bandwidth of 50.353 GB/s
+--- Optimizing for surface of 1024x1024    676106 vertices...  optimized in    0.302 s and    615 iterations with memory bandwidth of 76.891 GB/s
+--- Optimizing for surface of 2048x2048   2702691 vertices...  optimized in    1.030 s and    584 iterations with memory bandwidth of 85.609 GB/s
+--- Optimizing for surface of 4096x4096  10807096 vertices...  optimized in    4.674 s and    686 iterations with memory bandwidth of 88.637 GB/s
+--- Total optimization time 6.073 s
+
+
+-- Calculating altitude modifications to bring water to 0 feet using CPU using 4 threads
+
+--- Optimizing for surface of  256x 256     42429 vertices...  optimized in    0.067 s and    243 iterations with memory bandwidth of 10.937 GB/s
+--- Optimizing for surface of  512x 512    169259 vertices...  optimized in    0.233 s and    226 iterations with memory bandwidth of 11.596 GB/s
+--- Optimizing for surface of 1024x1024    676106 vertices...  optimized in    1.614 s and    616 iterations with memory bandwidth of 18.267 GB/s
+--- Optimizing for surface of 2048x2048   2702691 vertices...  optimized in    6.880 s and    584 iterations with memory bandwidth of 16.239 GB/s
+--- Optimizing for surface of 4096x4096  10807096 vertices...  optimized in   33.091 s and    686 iterations with memory bandwidth of 15.858 GB/s
+--- Total optimization time 41.884 s

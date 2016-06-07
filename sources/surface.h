@@ -8,6 +8,7 @@ public:
 	surface_solver();
 	~surface_solver();
 	std::string name();
+	int bytes_per_it();
 	std::pair<int,double> run(std::vector<std::vector<char> > const &bmask,std::vector<std::vector<float> > &bvalues,float thresh);
 private:
 	struct data;

@@ -15,6 +15,29 @@
 #endif
 
 
+template<typename Type>
+class kahan_sum {
+public:
+	kahan_sum() : sum_(), c_() {}
+	operator Type () const
+	{
+		return sum_;
+	}
+
+	kahan_sum const &operator+=(Type inp)
+	{
+		Type y=inp - c_;
+		Type t=sum_ + y;
+		c_ = (t - sum_)  - y;
+		sum_ = t;
+		return *this;
+	}
+private:
+	Type sum_;
+	Type c_;
+};
+
+
 class sparce_matrix {
 public:
 	struct row {
@@ -52,6 +75,11 @@ public:
 private:
 	std::vector<row> rows_;
 };
+
+inline int get_bytes_per_it()
+{
+	return sizeof(sparce_matrix::row) + sizeof(float)* ( 2 + 3 + 3 + 3);
+}
 
 
 #if defined USE_OMP
@@ -143,7 +171,7 @@ std::string solver_name()
 
 float sparce_matrix::mpl(int from,int to,float const *vin,float *vout) const
 {
-	float sum=0;
+	kahan_sum<float> sum;
 	for(int i=from;i<to;i++) {
 		row r = rows_[i];
 		float v[4]= { 
@@ -206,9 +234,13 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 
 	A.mpl(0,N,x,r);
 	float grsold=0;
-	for(int i=0;i<N;i++) {
-		p[i] = r[i]=b[i]-r[i];
-		grsold+=r[i]*r[i];
+	{
+		kahan_sum<float> rsold_s;
+		for(int i=0;i<N;i++) {
+			p[i] = r[i]=b[i]-r[i];
+			rsold_s+=r[i]*r[i];
+		}
+		grsold = rsold_s;
 	}
 	
 	int threads = std::thread::hardware_concurrency();
@@ -229,7 +261,7 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 			float pAp = sum(pAp_acc.data(),threads);
 
 			float alpha = rsold / pAp;
-			float myrsnew=0;
+			kahan_sum<float> myrsnew;
 			for(int i=from;i<to;i++) 
 				x[i]+=alpha*p[i];
 			for(int i=from;i<to;i++) {
@@ -278,10 +310,9 @@ std::string solver_name()
 float sparce_matrix::mpl(int N,float const *vin,float *vout) const
 {
 	int size = rows_.size();
-	float res = 0;
+	kahan_sum<float> r;
 	for(int i=0;i<size;i++) {
 		row const &r = rows_[i];
-
 		float v[4]= { 
 			vin[r.c[0]],  
 			vin[r.c[1]],  
@@ -291,9 +322,9 @@ float sparce_matrix::mpl(int N,float const *vin,float *vout) const
 		float a = vin[i];
 		float b=a + (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
 		vout[i]=b;
-		res+=a*b;
+		r+=a*b;
 	}
-	return res;
+	return r;
 }
 
 // CPU single thread
@@ -314,10 +345,12 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 
 	A.mpl(N,x,r);
 	float rsold=0;
+	kahan_sum<float> rsold_sum;
 	for(int i=0;i<N;i++) {
 		p[i] = r[i]=b[i]-r[i];
-		rsold+=r[i]*r[i];
+		rsold_sum+=r[i]*r[i];
 	}
+	rsold = rsold_sum;
 	int it;
 	float rsnew = 0;	
 
@@ -327,11 +360,14 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 		for(int i=0;i<N;i++)  
 			x[i]+=alpha*p[i];
 		rsnew=0;
+		kahan_sum<float> rsnew_sum;
+		int id=0;
+		int pos=0;
 		for(int i=0;i<N;i++) {
 			float tmp = r[i] - alpha*Ap[i];
-			rsnew += tmp*tmp;
-			r[i]=tmp;
+			rsnew_sum += tmp*tmp;
 		}
+		rsnew = rsnew_sum;
 		if(rsnew < th2)
 			break;
 		float factor = rsnew / rsold;
