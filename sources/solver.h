@@ -24,7 +24,9 @@
 #ifndef _WIN32
 #include <fstream>
 #else
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 
 #endif
@@ -57,7 +59,7 @@ std::string cpu_name()
 	char name[256]={0};
 	DWORD size=sizeof(name)-1;
 	HKEY key;
-	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE,"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",NULL,KEY_READ,&key)
+	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE,"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",0,KEY_READ,&key))
 		return "Unknown CPU";
 	if(RegQueryValueExA(key,"ProcessorNameString",0,0,(BYTE*)name,&size)) {
 		RegCloseKey(key);
