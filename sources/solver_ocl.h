@@ -187,6 +187,7 @@ public:
 		)xxx");
 
 		mpl_.assign("matrix_mpl");
+		mpl_.local(LOCAL_BLOCK);
 
 		mpl_prod_.assign("matrix_mpl_and_prod");
 		mpl_prod_.local(LOCAL_BLOCK);
@@ -198,12 +199,15 @@ public:
 		vsum_.local(LOCAL_BLOCK);
 
 		b_min_r_to_r_and_p_.assign("b_min_r_to_r_and_p");
+		b_min_r_to_r_and_p_.local(LOCAL_BLOCK);
 		add_vectors_.assign("add_vectors");
+		add_vectors_.local(LOCAL_BLOCK);
 
 		add_vectors_and_prod_.assign("add_vectors_and_prod");
 		add_vectors_and_prod_.local(LOCAL_BLOCK);
 
 		add_vectors_to_.assign("add_vectors_to");
+		add_vectors_to_.local(LOCAL_BLOCK);
 	}
 	float post_reduce(memory_object<float> &rsrc,memory_object<float> &rtgt,int N)
 	{

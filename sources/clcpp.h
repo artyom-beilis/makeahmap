@@ -124,7 +124,6 @@ public:
 #endif				
 				device_id_ = avail[i];
 			}
-			std::cout << std::endl;
 		}
 
 		if(!(context_ = clCreateContext(0,1,&device_id_,NULL,NULL,&err)))

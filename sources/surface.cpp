@@ -87,18 +87,17 @@ std::unique_ptr<surface_solver_base> get_solver(surface_solver_options const &op
 			if(rptr->slv.is_cpu()){
 				if(opt.allow_cpu) {
 					std::cout <<"   WARNING: Only CPU OpenCL support avalible (suboptimal), using it as per user request " << std::endl;
-					ptr = std::move(rptr);
+					return std::move(rptr);
 				}
 				else {
 					std::cout <<"   NOTE: No GPU OpenCL support avalible, falling back to CPU" << std::endl;
 				}
 			}
+			return std::move(rptr);
 		}
 		catch(std::exception const &e) {
 			std::cout <<"   WARMING: Failed to create OpenCL solver, falling back to CPU: " << e.what() << std::endl;
 		}
-		if(ptr)
-			return std::move(ptr);
 	}
 #endif
 	ptr.reset(new surface_solver<cpu::eq_solver>());
