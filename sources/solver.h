@@ -6,12 +6,67 @@
 #include <assert.h>
 #include <iostream>
 #include <sstream>
-#define CPU_BARRIERS
-//#define USE_OMP
 
-#ifdef CPU_BARRIERS
-#include <thread>
-#include <pthread.h>
+#define USE_MT_SOLVER
+
+#ifdef USE_MT_SOLVER
+	#include <thread>
+
+	#ifdef _WIN32
+		#include <condition_variable>
+		#include <mutex>
+	#else
+		#include <pthread.h>
+	#endif
+
+#endif
+
+#ifndef _WIN32
+#include <fstream>
+#else
+#define NOMINMAX
+#include <windows.h>
+
+#endif
+
+
+namespace cpu  {
+
+#ifndef _WIN32
+
+std::string cpu_name()
+{
+	std::ifstream proc("/proc/cpuinfo");
+	if(!proc)
+		return "Unknown CPU";
+	std::string line;
+	while(std::getline(proc,line)) {
+		size_t p;
+		if(line.find("model name")!=std::string::npos && (p=line.find(": "))!=std::string::npos) {
+			return line.substr(p+2);
+		}
+	}
+	return "Unknown CPU";
+	
+}
+
+#else
+
+std::string cpu_name()
+{
+	char name[256]={0};
+	DWORD size=sizeof(name)-1;
+	HKEY key;
+	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE,"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",NULL,KEY_READ,&key)
+		return "Unknown CPU";
+	if(RegQueryValueExA(key,"ProcessorNameString",0,0,(BYTE*)name,&size)) {
+		RegCloseKey(key);
+		return "Unknown CPU";
+	}
+	RegCloseKey(key);
+	return name;
+}
+
 #endif
 
 
@@ -68,7 +123,7 @@ public:
 		assert(i<4);
 	}
 	float mpl(int N,float const *vin,float *vout) const;
-#ifdef CPU_BARRIERS
+#ifdef USE_MT_SOLVER
 	float mpl(int from,int to,float const *vin,float *vout) const;
 #endif	
 
@@ -76,96 +131,13 @@ private:
 	std::vector<row> rows_;
 };
 
-inline int get_bytes_per_it()
-{
-	return sizeof(sparce_matrix::row) + sizeof(float)* ( 2 + 3 + 3 + 3);
-}
 
-
-#if defined USE_OMP
-std::string solver_name()
-{
-	return "CPU using OpenMP";
-}
-
-float sparce_matrix::mpl(int N,float const *vin,float *vout) const
-{
-	float pAp=0.0;
-	#pragma omp parallel for reduction(+:pAp)
-	for(int i=0;i<N;i++) {
-		row r = rows_[i];
-		float v[4]= { 
-			vin[r.c[0]],  
-			vin[r.c[1]],  
-			vin[r.c[2]],  
-			vin[r.c[3]]
-		};
-		float p=vin[i];
-		float Ap = p + (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
-		vout[i]=Ap;
-		pAp+=p*Ap;
-	}
-	return pAp;
-}
-
-/// CPU OMP
-int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8,int limit=-1)
-{
-	std::vector<float> rv(N,0);
-	std::vector<float> pv(N,0);
-	std::vector<float> Apv(N,0);
-
-	float *r=rv.data();
-	float *p=pv.data();
-	float *Ap = Apv.data();
-
-	if(limit==-1)
-		limit=N;
-	
-	float th2=thresh*thresh;
-
-	A.mpl(N,x,r);
-	float rsold=0;
-	for(int i=0;i<N;i++) {
-		p[i] = r[i]=b[i]-r[i];
-		rsold+=r[i]*r[i];
-	}
-	int it;
-	float rsnew = 0;	
-	
-	for(it=0;it<limit;it++) {
-		A.mpl(N,p,Ap);
-		float pAp=A.mpl(N,p,Ap);
-		float alpha = rsold / pAp;
-		rsnew=0;
-		#pragma omp for
-		for(int i=0;i<N;i++)  
-			x[i]+=alpha*p[i];
-		#pragma omp parallel for reduction(+:rsnew)
-		for(int i=0;i<N;i++) {
-			float tmp = r[i] - alpha*Ap[i];
-			rsnew +=tmp*tmp;
-			r[i] = tmp;
-		}
-		if(rsnew < th2)
-			break;
-		float factor = rsnew / rsold;
-		#pragma omp for
-		for(int i=0;i<N;i++)
-			p[i]=r[i]+factor*p[i];
-		rsold = rsnew;
-
-
-	}
-	return it;
-}
-
-#elif defined CPU_BARRIERS
+#if defined USE_MT_SOLVER
 
 std::string solver_name()
 {
 	std::ostringstream ss;
-	ss << "CPU using " << std::thread::hardware_concurrency() << " threads\n";
+	ss << "CPU MT solver running on " << cpu_name() << "; " << std::thread::hardware_concurrency() << " threads";
 	return ss.str();
 }
 
@@ -196,6 +168,8 @@ float sum(float const *v,int n)
 	return r;
 }
 
+#ifndef _WIN32
+
 class barrier {
 	barrier(barrier const &other) = delete;
 	void operator=(barrier const &other)=delete;
@@ -216,8 +190,46 @@ private:
 	pthread_barrier_t b_;
 };
 
+#else
+
+class barrier {
+public:
+	barrier(int count): threshold_(count), count_(count), generation_(0)
+	{
+		if (count == 0)
+			throw std::invalid_argument("count cannot be zero.");
+	}
+
+	void wait()
+	{
+		std::unique_lock<std::mutex> guard(mutex_);		
+		int gen = generation_;
+
+		if (--count_ == 0)
+		{
+			generation_++;
+			count_ = threshold_;
+			cond_.notify_all();
+			return;
+		}
+
+		while (gen == generation_)
+			cond_.wait(guard);
+	}
+
+private:
+	std::mutex mutex_;
+	std::condition_variable cond_;
+	int threshold_;
+	int count_;
+	int generation_;
+};
+
+
+#endif
+
 // CPU several threads
-int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8,int limit=-1)
+std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8,int limit=-1)
 {
 	std::vector<float> rv(N,0);
 	std::vector<float> pv(N,0);
@@ -288,6 +300,7 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 	int start = 0;
 	int chunk = (N + threads-1)/threads;
 	int id=0;
+	auto start_ts = std::chrono::high_resolution_clock::now();
 	for(start=0;start<N;start+=chunk) {
 		int limit = std::min(start+chunk,N);
 		tasks[id] = std::move(std::thread(runner,start,limit,id));
@@ -296,7 +309,9 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 	for(int i=0;i<threads;i++) {
 		tasks[i].join();
 	}
-	return iters;
+	auto end_ts = std::chrono::high_resolution_clock::now();
+	double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end_ts-start_ts).count();
+	return std::make_pair(iters,time);
 }
 
 
@@ -304,7 +319,7 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 
 std::string solver_name()
 {
-	return "CPU Single Thread";
+	return "Single Thread solver running on " + cpu_name();
 }
 
 float sparce_matrix::mpl(int N,float const *vin,float *vout) const
@@ -328,7 +343,7 @@ float sparce_matrix::mpl(int N,float const *vin,float *vout) const
 }
 
 // CPU single thread
-int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8,int limit=-1)
+std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8,int limit=-1)
 {
 	std::vector<float> rv(N,0);
 	std::vector<float> pv(N,0);
@@ -354,6 +369,7 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 	int it;
 	float rsnew = 0;	
 
+	auto start_ts = std::chrono::high_resolution_clock::now();
 	for(it=0;it<limit;it++) {
 		float pAp = A.mpl(N,p,Ap);
 		float alpha = rsold / pAp;
@@ -375,8 +391,45 @@ int solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8
 			p[i]=r[i]+factor*p[i];
 		rsold = rsnew;
 	}
-	return it;
+	auto end_ts = std::chrono::high_resolution_clock::now();
+	double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end_ts-start_ts).count();
+	return std::make_pair(it,time);
 }
 
 #endif
 
+
+class eq_solver {
+public:
+	void init_matrix(int N)
+	{
+		mat.reserve(N);
+		N_ = N;
+	}
+	void add(int r,int c)
+	{
+		mat.add(r,c);
+	}
+	std::pair<int,double> solve(float const *b,float *x,float thresh,int limit)
+	{
+		return cpu::solve(N_,mat,b,x,thresh,limit);
+	}
+	std::string name()
+	{
+		return solver_name();
+	}
+	static int get_bytes_per_it()
+	{
+		return sizeof(sparce_matrix::row) + sizeof(float)* ( 2 + 3 + 3 + 3);
+	}
+	bool is_cpu()
+	{
+		return true;
+	}
+
+private:
+	sparce_matrix mat;
+	int N_;
+};
+
+} // namespace cpu

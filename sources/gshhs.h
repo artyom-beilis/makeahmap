@@ -425,20 +425,18 @@ public:
 	}
 
 
-
-
-    void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope)
+    void update_elevations(std::vector<std::vector<int16_t> > &elev,double slope,int alt_limit,surface_solver_options const &opt)
     {
-	    static const int alt_limit = 30;
-
         std::vector<std::vector<int16_t> > calc_alt(water_size,std::vector<int16_t>(water_size));
 	    std::vector<std::vector<float> > prev_values;
-        std::cout << "-- Calculating water bodies to altitudes\n";
+        std::cout << "-- Converting water bodies to elevations map\n";
         calc_elevation_boundaries(calc_alt,slope,alt_limit);
-        surface_solver solver;
-        std::cout << "-- Calculating altitude modifications to bring water to 0 feet using " << solver.name() << "\n";
+        std::cout << "-- Calculating elevation modifications to bring water to 0 feet\n";
+        std::unique_ptr<surface_solver_base> solver = get_solver(opt);
+        std::cout << "   Using:" << solver->name() << "\n\n";
+        std::cout << "    " << std::setw(9) << "Grid" << "|" << std::setw(10) << "Vertices"<< "|" << std::setw(9) << "Time (s)" << "|" << std::setw(10) << "Iterations" << "| Bandwidth GB/s" << std::endl;
         double total = 0;
-        for(int N=256;N<=water_size;N*=2) {
+        for(int N=512;N<=water_size;N*=2) {
             std::vector<std::vector<char> > bmask(N,std::vector<char>(N));
             std::vector<std::vector<float> > bvalues(N,std::vector<float>(N));
             int factor = water_size / N;
@@ -471,14 +469,13 @@ public:
                     }
                 }
             }
-            std::cout<< "--- Optimizing for surface of " << std::setw(4) << N << "x" << std::setw(4) << N  << " " << std::setw(9) << vertices << " vertices... " << std::flush;
-            std::pair<int,double> stat = solver.run(bmask,bvalues,0.5f);
-            total+=stat.second;
-            double band=double(solver.bytes_per_it()) * stat.first * vertices / stat.second / (1024*1024*1024);
-            std::cout <<" optimized in " << std::setw(8) << stat.second << " s and "<< std::setw(6) << stat.first << " iterations with memory bandwidth of " << band << " GB/s"  << std::endl;
+            std::cout<< "    " << std::setw(9) << (std::to_string(N) + "x" + std::to_string(N))  << "|" << std::setw(10) << vertices << "|" << std::flush;
+            auto stat = solver->run(bmask,bvalues,opt.threshold);
+            total+=stat.time;
+            std::cout << std::setw(9) << stat.time << "|"<< std::setw(10) << stat.iterations << "|" << std::setw(9) <<  stat.bandwidth << std::endl;
             prev_values.swap(bvalues);
         }
-        std::cout << "--- Total optimization time " << total << " s"<< std::endl;
+        std::cout << "\n    Total optimization time " << total << " s"<< std::endl;
         float minv=0;
         float maxv=0;
         for(int r=0;r<water_size;r++) {
@@ -487,7 +484,7 @@ public:
                 maxv=std::max(maxv,prev_values[r][c]);
             }
         }
-        std::cout << "--- Maximal correction  range max=" << maxv << " min="<<minv << std::endl;
+        std::cout << "    Maximal correction  range max=" << maxv << " min="<<minv << std::endl;
         std::vector<std::vector<int16_t> > ndiff(water_size,std::vector<int16_t>(water_size));
         std::ofstream mem("mem.pgm",std::ios::binary);
         std::ofstream neg("neg.pgm",std::ios::binary);
@@ -515,7 +512,7 @@ public:
                 mem<<color;
             }
         }
-        std::cout << "--- Maximal land modificationt to below 0 alt " << max_diff << std::endl;
+        std::cout << "    Maximal land modificationt to below 0 alt " << max_diff << std::endl;
         for(int r=0;r<water_size;r++)
             for(int c=0;c<water_size;c++)
                 neg << static_cast<unsigned char>(ndiff[r][c]*255/max_diff);

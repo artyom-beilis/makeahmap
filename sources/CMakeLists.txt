@@ -32,23 +32,23 @@ set(STDLIBS ${CURL} ${TIFF} ${ZLIB})
 if(OCL_INC AND OCL)
 	include_directories("${OCL_INC}")
 	
-	add_executable(makeahmap_ocl
+	add_executable(makeahmap
 		makeahmap.cpp
 		downloader.cpp
 		surface.cpp
 		${EXTRASRC}
 		)
-	target_link_libraries(makeahmap_ocl ${STDLIBS} ${OCL} ${PLATFORM_LIBS})
+	set_target_properties(makeahmap PROPERTIES COMPILE_FLAGS "-DENABLE_OCL")
+	target_link_libraries(makeahmap ${STDLIBS} ${OCL} ${PLATFORM_LIBS})
 
 endif()
 
-add_executable(makeahmap
+add_executable(makeahmap_cpu
 		makeahmap.cpp
 		downloader.cpp
 		surface.cpp
 		${EXTRASRC})
 
-set_target_properties(makeahmap PROPERTIES COMPILE_FLAGS "-DUSE_CPU")
-target_link_libraries(makeahmap ${STDLIBS} ${PLATFORM_LIBS})
+target_link_libraries(makeahmap_cpu ${STDLIBS} ${PLATFORM_LIBS})
 
 

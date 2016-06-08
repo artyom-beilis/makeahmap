@@ -41,6 +41,7 @@
 #include "gshhs.h"
 #include "dem.h"
 #include "downloader.h"
+#include "surface.h"
 
 std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
@@ -65,6 +66,7 @@ bool fix_river_slopes = true;
 int lake_alt_limit = 30000; //higher than everest
 double lake_or_island_min_size = 0.0; // sq miles
 double water_to_land_slope = 0.176; 
+int water_to_land_range = 100; // feet
 
 std::string map_name = "map";
 std::string tiff_file="./data/globcover/globcover.tif";
@@ -85,6 +87,8 @@ enum altitude_handling_type {
 } altitude_handling = shade_hills;
 double shading_factor = 1.0;
 double map_scale;
+
+surface_solver_options solver_options;
 
 class parsing_error : public std::runtime_error {
 public:
@@ -392,6 +396,15 @@ int get_type_index(std::string const &index)
 }
 
 
+bool yesno(std::string const &key,std::string const &value)
+{
+    if(value == "yes")
+        return true;
+    if(value == "no")
+        return false;
+    throw parsing_error("Invalid key value "  + key + " expected to be yes or no");
+}
+
 void load_profile(std::string file_name)
 {
     std::ifstream in(file_name.c_str());
@@ -481,7 +494,10 @@ void load_profile(std::string file_name)
 			else if(key == "water_to_land_slope") {
 				water_to_land_slope = atof(value.c_str());
 			}
-            else if(key == "fix_river_slopes") {
+   			else if(key == "water_to_land_range") {
+				water_to_land_range = atoi(value.c_str());
+			}
+         else if(key == "fix_river_slopes") {
                 if(value == "yes")
                     fix_river_slopes = true;
                 else if(value == "no")
@@ -562,6 +578,15 @@ void load_profile(std::string file_name)
             }
             else if(key == "elevation_shading_factor") {
                 shading_factor = atof(value.c_str());
+            }
+            else if(key == "solver_allow_cpu") {
+                solver_options.allow_cpu=yesno(key,value);
+            }
+            else if(key == "solver_force_cpu") {
+                solver_options.force_cpu=yesno(key,value);
+            }
+            else if(key == "solver_threshold") {
+                solver_options.threshold = atof(value.c_str());
             }
             else if(key == "map_color[]") {
                 color c(value);
@@ -1525,7 +1550,7 @@ int main(int argc,char **argv)
         }*/
         
         std::cout << "- Updateing altitudes... " << std::endl;
-        gen.update_elevations(elevations,water_to_land_slope);
+        gen.update_elevations(elevations,water_to_land_slope,water_to_land_range,solver_options);
         
         
 

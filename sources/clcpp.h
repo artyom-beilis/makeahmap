@@ -69,6 +69,12 @@ public:
 		clReleaseCommandQueue(queue_);
 		clReleaseContext(context_);
 	}
+	bool is_cpu()
+	{
+		cl_device_type dt;
+		clGetDeviceInfo(device_id_,CL_DEVICE_TYPE,sizeof(dt),&dt,0);
+		return dt == CL_DEVICE_TYPE_CPU;
+	}
 	std::string name()
 	{
 		std::string type;
@@ -77,7 +83,7 @@ public:
 		if(dt == CL_DEVICE_TYPE_GPU) 
 			type = "GPU";
 		else if(dt == CL_DEVICE_TYPE_CPU) 
-			type = "CPU (suboptimal!!!)";
+			type = "CPU";
 		else
 			type = "Unknown type";
 

@@ -6,8 +6,9 @@
 #include <iostream>
 #include <assert.h>
 #include <memory>
+#include <chrono>
 
-#define SRC(x) #x
+namespace gpu {
 
 #define LOCAL_BLOCK	128
 #define LOCAL_BLOCK_STR "128"
@@ -220,7 +221,18 @@ public:
 		
 	}
 
-	int solve(float const *b_in,float *x0_in,float thresh=1e-6,int limit=-1)
+	std::string name()
+	{
+		return "OpenCL solver running on " + context().name();
+	}
+
+	bool is_cpu()
+	{
+		return context().is_cpu();
+	}
+
+	std::pair<int,double>
+	solve(float const *b_in,float *x0_in,float thresh=1e-6,int limit=-1)
 	{
 		int N = rows_.size();
 		if(limit==-1)
@@ -244,6 +256,7 @@ public:
 		float rsold = post_reduce(rd1,rd2,N);
 		int it=0;
 		float rsnew = 0;
+		auto start = std::chrono::high_resolution_clock::now();
 		for(it=0;it<limit;it++) {
 			mpl_prod_(N,Mrows,p,Ap,rd1);
 			float pAp = post_reduce(rd1,rd2,N);
@@ -257,8 +270,15 @@ public:
 			add_vectors_to_(N,p,factor,r);
 			rsold = rsnew;
 		}
+		auto end = std::chrono::high_resolution_clock::now();
+		double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end-start).count();
 		x.copy_to_host(x0_in,N);
-		return it;
+		return std::make_pair(it,time);
+	}
+	
+	static int get_bytes_per_it()
+	{
+		return sizeof(eq_solver::row) + sizeof(float)* ( 1 + 3 + 3 + 3 + 3);
 	}
 
 	context_with_program ctx_;
@@ -268,9 +288,5 @@ public:
 	kernel b_min_r_to_r_and_p_,add_vectors_,add_vectors_and_prod_,add_vectors_to_;
 };
 
-inline int get_bytes_per_it()
-{
-	return sizeof(eq_solver::row) + sizeof(float)* ( 1 + 3 + 3 + 3 + 3);
-}
 
-
+} // gpu
