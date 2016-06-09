@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 # MinGW Specific
-if(WINDOWS)
+if(WIN32)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -O2 -g -Wall -m32 -DDLL_EXPORT -DCURL_STATICLIB -Wno-deprecated-declarations")
 	set(CMAKE_RC_FLAGS " -F pe-i386")
 	set(PLATFORM_LIBS winmm wldap32 ws2_32)
