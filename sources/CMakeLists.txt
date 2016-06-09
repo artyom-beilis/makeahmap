@@ -41,6 +41,9 @@ if(OCL_INC AND OCL)
 	set_target_properties(makeahmap PROPERTIES COMPILE_FLAGS "-DENABLE_OCL")
 	target_link_libraries(makeahmap ${STDLIBS} ${OCL} ${PLATFORM_LIBS})
 
+	add_executable(gpumemtest gpumemtest.cpp)
+	target_link_libraries(gpumemtest ${OCL})
+
 endif()
 
 add_executable(makeahmap_cpu

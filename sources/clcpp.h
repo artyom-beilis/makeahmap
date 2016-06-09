@@ -29,6 +29,19 @@ public:
 		total_time_ += ns * 1e-9;
 		total_calls_++;
 	}
+	double specific() const
+	{
+		return total_time_ / total_calls_;
+	}
+	double total() const
+	{
+		return total_time_;
+	}
+	void reset()
+	{
+		total_calls_=0;
+		total_time_ = 0;
+	}
 	~profiler()
 	{
 		if(total_calls_ > 0)
@@ -377,6 +390,10 @@ public:
 	{
 		if(kernel_)
 			clReleaseKernel(kernel_);
+	}
+	profiler &prof()
+	{
+		return prof_;
 	}
 private:
 	context_with_program &ctx_;

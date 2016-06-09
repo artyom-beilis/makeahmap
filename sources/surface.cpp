@@ -84,16 +84,13 @@ std::unique_ptr<surface_solver_base> get_solver(surface_solver_options const &op
 	if(!opt.force_cpu) {
 		try {
 			std::unique_ptr<surface_solver<gpu::eq_solver> > rptr (new surface_solver<gpu::eq_solver>());
-			if(rptr->slv.is_cpu()){
-				if(opt.allow_cpu) {
-					std::cout <<"   WARNING: Only CPU OpenCL support avalible (suboptimal), using it as per user request " << std::endl;
-					return std::move(rptr);
-				}
-				else {
-					std::cout <<"   NOTE: No GPU OpenCL support avalible, falling back to CPU" << std::endl;
-				}
+			if(!rptr->slv.is_cpu())
+				return std::move(rptr);
+			if(opt.allow_cpu) {
+				std::cout <<"   WARNING: Only CPU OpenCL support avalible (suboptimal), using it as per user request " << std::endl;
+				return std::move(rptr);
 			}
-			return std::move(rptr);
+			std::cout <<"   NOTE: No GPU OpenCL support avalible, falling back to CPU" << std::endl;
 		}
 		catch(std::exception const &e) {
 			std::cout <<"   WARMING: Failed to create OpenCL solver, falling back to CPU: " << e.what() << std::endl;
