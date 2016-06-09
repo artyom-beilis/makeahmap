@@ -7,10 +7,12 @@ struct surface_solver_options {
 	bool allow_cpu;
 	bool force_cpu;
 	float threshold;
+	int initial_grid;
 	surface_solver_options() :
 		allow_cpu(false),
 		force_cpu(false),
-		threshold(0.5)
+		threshold(0.5),
+		initial_grid(256)
 	{
 	}
 };

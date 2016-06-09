@@ -21,8 +21,13 @@ public:
 	void stop()
 	{
 		auto end = std::chrono::high_resolution_clock::now();
-	    total_time_ += std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end-start_).count();
+	    	total_time_ += std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end-start_).count();
 		total_calls_ ++;
+	}
+	void add_time(long long ns)
+	{
+		total_time_ += ns * 1e-9;
+		total_calls_++;
 	}
 	~profiler()
 	{
@@ -127,8 +132,12 @@ public:
 		}
 
 		if(!(context_ = clCreateContext(0,1,&device_id_,NULL,NULL,&err)))
-			throw cl_error("Failed to create context",err);	
-		if(!(queue_ = clCreateCommandQueue(context_,device_id_,0,&err)))
+			throw cl_error("Failed to create context",err);
+		int flags = 0;
+#ifdef ENABLE_PROF
+		flags |= CL_QUEUE_PROFILING_ENABLE;
+#endif		
+		if(!(queue_ = clCreateCommandQueue(context_,device_id_,flags,&err)))
 			throw cl_error("Failed to create queue",err);	
 		if(!(program_ = clCreateProgramWithSource(context_,1,&prg,NULL,&err)))
 			throw cl_error("Failed to create program",err);	
@@ -337,17 +346,24 @@ public:
 	}
 	void enqueue(size_t global_items)
 	{
-		prof_.start();
 		if(local_ != 0) 
 			global_items = (global_items + local_ - 1)/local_*local_;
+#ifdef ENABLE_PROF 	
 		cl_event ev;
-		int err = clEnqueueNDRangeKernel(ctx_.queue(),kernel_, 1, NULL, &global_items, (local_ ? &local_ : 0 ), 0, NULL, &ev);
+		cl_event *ev_ptr = &ev;
+#else
+		cl_event *ev_ptr = 0;
+#endif
+		int err = clEnqueueNDRangeKernel(ctx_.queue(),kernel_, 1, NULL, &global_items, (local_ ? &local_ : 0 ), 0, NULL, ev_ptr);
 		if(err!=CL_SUCCESS)
 			throw cl_error("Failed to enqueue kernel",err);
 #ifdef ENABLE_PROF 	
 		clWaitForEvents(1,&ev);
+		cl_ulong start=0,stop=0;
+		clGetEventProfilingInfo(ev,CL_PROFILING_COMMAND_START,sizeof(start),&start,0);
+		clGetEventProfilingInfo(ev,CL_PROFILING_COMMAND_END,sizeof(stop),&stop,0);
+		prof_.add_time(stop-start);
 #endif		
-		prof_.stop();
 	}
 	template<typename Item>
 	void bind(Item &it)

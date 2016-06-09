@@ -436,7 +436,7 @@ public:
         std::cout << "   Using:" << solver->name() << "\n\n";
         std::cout << "    " << std::setw(9) << "Grid" << "|" << std::setw(10) << "Vertices"<< "|" << std::setw(9) << "Time (s)" << "|" << std::setw(10) << "Iterations" << "| Bandwidth GB/s" << std::endl;
         double total = 0;
-        for(int N=256;N<=water_size;N*=2) {
+        for(int N=opt.initial_grid;N<=water_size;N*=2) {
             std::vector<std::vector<char> > bmask(N,std::vector<char>(N));
             std::vector<std::vector<float> > bvalues(N,std::vector<float>(N));
             int factor = water_size / N;
