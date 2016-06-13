@@ -1,4 +1,5 @@
 set BP=C:\Users\artik\mingw\packages\bin
+set DIST=C:\Users\artik\mingw\packages\dist
 mkdir makeahmap-%1
 mkdir makeahmap-%1\output
 mkdir makeahmap-%1\data
@@ -13,6 +14,7 @@ copy %BP%\unzip.exe makeahmap-%1\
 copy %BP%\jpeg62.dll makeahmap-%1\
 copy %BP%\libtiff3.dll makeahmap-%1\
 copy %BP%\zlib1.dll makeahmap-%1\
+copy %DIST%\*.dll makeahmap-%1\
 copy copyright*.txt makeahmap-%1\
 copy images\*.tif makeahmap-%1\images
 copy images\*.txt makeahmap-%1\images
