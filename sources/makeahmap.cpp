@@ -310,7 +310,7 @@ void load_custom_type_mapping()
         char c;
 
         ss >> std::dec >> gcover >> c >> std::hex >> ah;
-        if(!ss || c!=',' || gcover >=256) {
+        if(!ss || c!=',' || gcover >255 || ah > 0xFFFFFF) {
             std::ostringstream tmp;
             tmp << "Invalid line " << lineno << " in file " << custom_mapping;
             throw std::runtime_error(tmp.str());
