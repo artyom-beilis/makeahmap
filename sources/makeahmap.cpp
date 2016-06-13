@@ -1186,20 +1186,15 @@ void make_map_color_index(bmp::header &hdr)
 
 int get_color_from_type(int type,double brightness_factor)
 {
-    // ntt0000  Deep water ntt0000 will always be deep water  (This is a greyscale BMP designed to vary the water over distances)
-    // ntt0001  Grass
-    // ntt0002  Forest 1 (evergreen)
-    // ntt0003  Forest 2 (deciduous)
-    // ntt0004  Farm 1
-    // ntt0005  Farm 2
-    // ntt0006  Rock
-    // ntt0007  Swamp
-    // ntt0008  Rocky Grass
-    // ntt0009  Sandy Grass
-    // ntt0010 A  Beach
-    // ntt0011 B  River bed /
-    // ntt0012 C  Snow / Coral
-    
+	
+	if(type & 0xFF) {
+		type = type >> (8+8+4);
+	}
+	else {
+		type = 16+((type >> 8) / 0x40 & 0x3);
+	}
+	assert(0<=type && type<=19);
+
     // 255 - water
     // 254 - beach
     // 253 - grid line
@@ -1212,8 +1207,8 @@ int get_color_from_type(int type,double brightness_factor)
     //  50- 99 - forest
     //   0- 49 - farm 
     
-    int basic;
-    switch(type & 0xF) {
+    int basic = type / 5;
+/*    switch(type & 0xF) {
     case 4:
     case 5:
         basic = 0; // farm1,2
@@ -1240,7 +1235,7 @@ int get_color_from_type(int type,double brightness_factor)
         return 255;
     default:
         throw std::runtime_error("Internal error invalid ground type");
-    }
+    }*/
     int brightness=std::max(0,std::min(49,int(round(brightness_factor*49))));
     int color = 50 * basic + brightness;
     return color;
@@ -1305,7 +1300,7 @@ std::vector<std::vector<bool> > load_grid(size_t tsize)
     return grid;
 }
 
-void make_clipboard_map(int max_elev,water_generator &gen)
+void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &elev)
 {
     int tsize = 1024;
     std::vector<std::vector<bool> > grid = load_grid(tsize);
@@ -1317,10 +1312,6 @@ void make_clipboard_map(int max_elev,water_generator &gen)
     int factor_type = map_size * 8;
     for(int r=tsize-1;r>=0;r--) {
         std::vector<unsigned char> colors(tsize);
-        int water_mask = (1u << (water_generator::sea_mark*2))
-                         | (1u << (water_generator::lake_mark*2))
-                         | (1u << (water_generator::river_mark*2));
-        int land_mask = 1u << (water_generator::land_mark * 2);
         for(int c=0;c<tsize;c++) {
                 if(grid[r][c]) {
                     colors[c]=253; // grid;
@@ -1337,19 +1328,16 @@ void make_clipboard_map(int max_elev,water_generator &gen)
 
                 for(int wr=t_r;wr<t_r_e;wr++) {
                     for(int wc=t_c;wc<t_c_e;wc++) {
-                        int mark;
                         try {
-                            mark = gen.water_types.at(wr).at(wc);
+							int alt = elev.at(wr).at(wc);
+							if(alt <= 0)
+								has_water = true;
+							else if(alt > 0)
+								has_ground = true;
                         }
                         catch(...) {
-                            std::cerr << r << " " << c << " " << wr << " " << wc << " " << gen.water_types.size() << std::endl;
+                            std::cerr << r << " " << c << " " << wr << " " << wc << std::endl;
                             throw;
-                        }
-                        if(mark & water_mask) {
-                            has_water=true;
-                        }
-                        if(mark & land_mask) {
-                            has_ground=true;
                         }
                     }
                 }
@@ -1580,7 +1568,7 @@ int main(int argc,char **argv)
         std::cout << "-- Maximal altitude (for use with TE bmp import) is " << max_alt << " feet" << std::endl;
         
         std::cout << "- Generating clibboard map... " << std::flush;
-        make_clipboard_map(max_alt,gen);
+        make_clipboard_map(max_alt,elevations);
         std::cout << "Done" << std::endl;
         
         std::cout << "\n\nCompleted\n";
