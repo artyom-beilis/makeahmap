@@ -1536,26 +1536,18 @@ int main(int argc,char **argv)
         std::vector<std::vector<int16_t> > tmp=dem::read(db_type,map_size*8,lat1,lat2,lon1,lon2);
         elevations.swap(tmp);
         
-        /*std::set<int> ignore_set;
-        
-        if(river_correction_limit != -1 && fix_river_slopes && rv_prop.max_level != 0)
-            pass_one();
-        */
         water_generator gen(lat1,lat2,lon1,lon2,map_size * 8);
         std::cout << "- Loading & processing shores data. " << std::endl;
         gen.load_land(shores,elevations,lake_or_island_min_size,lake_alt_limit);
         
-        /*
         if(rv_prop.max_level != 0) {
             std::cout << "- Loading & processing rivers data... " << std::endl;
-            gen.load_rivers(rivers,rv_prop);
-            gen.make_border();
+            gen.load_rivers(rivers,elevations,rv_prop,lake_alt_limit);
             std::cout << "  Complete" << std::endl;
-        }*/
+        }
         
         std::cout << "- Updateing altitudes... " << std::endl;
         gen.update_elevations(elevations,water_to_land_slope,water_to_land_range,solver_options);
-        
         
 
         std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;

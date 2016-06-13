@@ -56,16 +56,12 @@ struct water_properties {
     water_properties() :
         lat_shift(0.0),
         lon_shift(0.0),
-        max_level(-1),
-        default_width(1),
-        level_to_width({ { 1, 6 }, { 2, 5 }, { 3 , 4 } , { 4 , 3 }, { 5, 3} , { 5 , 2 } }),
+        max_level(3), // major rivers only
+        default_width(1000),
+        level_to_width({ { 1, 2000 }, { 2, 1500  }, { 3 , 1000 }  }),
         colors(),
         depth_range()
     {
-        lat_shift = 0;
-        lon_shift = 0;
-        max_level = -1;
-        default_width = 2;
     }
 };
 
@@ -186,11 +182,12 @@ public:
 	{
 		close();
 	}
-	
+
 	struct segment {
-		double r0,r1,c0,c1;
+        double r0,r1,c0,c1;
 		double length;
 		double n_x,n_y;
+        double width;
 		void calc_params()
 		{
 			length = sqrt((r0 - r1)*(r0 - r1) + (c0-c1)*(c0-c1));
@@ -224,7 +221,7 @@ public:
 			return fabs(proj_norm);
 		}
 	};
-	
+
 	void load_land(std::string file_name,std::vector<std::vector<int16_t> > &elev,double area_limit_sq_m,int alt_limit)
 	{
 		open(file_name);
@@ -262,6 +259,7 @@ public:
 				
 				
 				segment s;
+                s.width = 0;
 				s.r0 = lat_2_row * (start.y - lat1);
 				s.r1 = lat_2_row * (end.y   - lat1);
 				s.c0 = lon_2_col * (start.x - lon1);
@@ -430,7 +428,11 @@ public:
         std::vector<std::vector<int16_t> > calc_alt(water_size,std::vector<int16_t>(water_size));
 	    std::vector<std::vector<float> > prev_values;
         std::cout << "-- Converting water bodies to elevations map\n";
+        std::cout << "--- Iceles and Lakes\n";
         calc_elevation_boundaries(calc_alt,slope,alt_limit);
+        std::cout << "--- Rivers\n";
+        calc_river_boundaries(calc_alt,slope,alt_limit);
+        save_water_elev(calc_alt,alt_limit);
         std::cout << "-- Calculating elevation modifications to bring water to 0 feet\n";
         std::unique_ptr<surface_solver_base> solver = get_solver(opt);
         std::cout << "   Using:" << solver->name() << "\n\n";
@@ -499,12 +501,12 @@ public:
                 }
                 else {
                     elev[r][c]=elev[r][c]-prev_values[r][c]+alt_limit;
-                    if(elev[r][c]<alt_limit) {
+                    if(elev[r][c]<1) {
                         if(orig_alt >= 0) {
                             ndiff[r][c] = alt_limit - elev[r][c];
                             max_diff=std::max(ndiff[r][c],max_diff);
                         }
-                        elev[r][c]=alt_limit;
+                        elev[r][c]=1;
                     }
                 }
                 float v=(prev_values[r][c]-minv) / (maxv-minv) * 254;
@@ -517,20 +519,57 @@ public:
             for(int c=0;c<water_size;c++)
                 neg << static_cast<unsigned char>(ndiff[r][c]*255/max_diff);
     }
+    struct bounding_box {
+        int rmin,rmax;
+        int cmin,cmax;
+    };
+    bounding_box get_bbox_from_segment(segment const &s,int max_dist)
+    {
+        bounding_box bb;
+        bb.rmin=std::max(0,int(std::min(s.r0,s.r1) - max_dist));
+        bb.cmin=std::max(0,int(std::min(s.c0,s.c1) - max_dist));
+        bb.rmax=std::min(water_size-1,int(std::max(s.r0,s.r1) + max_dist));
+        bb.cmax=std::min(water_size-1,int(std::max(s.c0,s.c1) + max_dist));
+        return bb;
+    }
+    void calc_river_boundaries(std::vector<std::vector<int16_t> > &elev,double slope,int alt_limit)
+    {
+        double factor = 660 * slope;
+        int max_dist = int((alt_limit / slope / 600) + 1);
+        for(segment const &s : rivers_) {
+            float mdepth = - s.width * slope / 2;
+            bounding_box bb=get_bbox_from_segment(s,max_dist);
+			for(int r=bb.rmin;r<=bb.rmax;r++) {
+				for(int c=bb.cmin;c<=bb.cmax;c++) {
+					int depth = int(round(s.distance(r,c) * factor + mdepth));
+                    depth = std::max(-alt_limit,std::min(depth,alt_limit));
+                    elev[water_size - 1 - r][c] = std::min<int16_t>(elev[water_size - 1 - r][c],depth);
+				}
+			}
+        }
+    }
+    void save_water_elev(std::vector<std::vector<int16_t> > &elev,int alt_limit)
+    {
+        std::ofstream f("water_body.pgm",std::ios::binary);
+        f<<"P5 " << water_size << " " << water_size << " 255\n";
+        for(int r=0;r<water_size;r++) {
+            for(int c=0;c<water_size;c++) {
+                float alt = elev[r][c];
+                int ialt = alt/alt_limit * 127 + 127;
+                unsigned char calt = std::max(0,std::min(255,ialt));
+                f<<calt;
+            }
+        }
+    }
     void calc_elevation_boundaries(std::vector<std::vector<int16_t> > &elev,double slope,int alt_limit)
     {
-		std::ofstream f("rep.pgm",std::ios::binary);
-		f<<"P5 " << water_size << " " << water_size << " 255\n";
 		double alt_for_cell = slope * 660;
 		double max_dist = alt_limit / alt_for_cell + 1;
 		std::vector<std::vector<double> > dist(	water_size,std::vector<double>(water_size,max_dist));
 		for(segment const &s: segments) {
-			int rmin=std::max(0,int(std::min(s.r0,s.r1) - max_dist));
-			int cmin=std::max(0,int(std::min(s.c0,s.c1) - max_dist));
-			int rmax=std::min(water_size-1,int(std::max(s.r0,s.r1) + max_dist));
-			int cmax=std::min(water_size-1,int(std::max(s.c0,s.c1) + max_dist));
-			for(int r=rmin;r<=rmax;r++) {
-				for(int c=cmin;c<=cmax;c++) {
+            bounding_box bb=get_bbox_from_segment(s,max_dist);
+			for(int r=bb.rmin;r<=bb.rmax;r++) {
+				for(int c=bb.cmin;c<=bb.cmax;c++) {
 					double d = s.distance(r,c);
 					if(d < dist[r][c])
 						dist[r][c] = d;
@@ -549,11 +588,9 @@ public:
 				int idist = int(round(dist[r][c] * alt_for_cell * sig));
 				idist = std::max(-alt_limit,std::min(alt_limit,idist));
 				elev[elev_r][c] = idist;
-				unsigned char output=idist + 100;
-				f<< output;
 			}
 		}
-		//write_segments_and_alt(elev);
+    	    	//write_segments_and_alt(elev);
 		return;
     }
 
@@ -787,7 +824,15 @@ public:
         water_generator *gen_;
     };
     
-	void load_rivers(std::string file_name,std::vector<std::vector<int16_t> > const &elev,water_properties const &prop)
+    
+    int alt(std::vector<std::vector<int16_t> > const &elev,double r,double c)
+    {
+        if(r<=0 || c<=0 || r>=water_size-1 || c>=water_size-1)
+            return 0;
+        return elev[water_size - int(round(r)) - 1][int(round(c))];
+    }
+
+	void load_rivers(std::string file_name,std::vector<std::vector<int16_t> > const &elev,water_properties const &prop,int alt_limit)
 	{
         int lat_shift = int(round(prop.lat_shift*1e6));
         int lon_shift = int(round(prop.lon_shift*1e6));
@@ -809,7 +854,6 @@ public:
             auto specific_width = prop.level_to_width.find(level);
             if(specific_width != prop.level_to_width.end())
                 width = specific_width->second;
-            double radius = width / 2;
 			for(int i=points-2;i>=end_point;i--) {
 				point start = poly[i+1];
 				point end = poly[i];
@@ -827,10 +871,15 @@ public:
 				s.c1 = lon_2_col * (end.x   - lon1);
 				s.calc_params();
                 
-                //int segment_alt = (alt(elev,s.r0,s.c0) + alt(elev,s.r1,s.c1)) / 2;
-
+                int segment_alt = std::max(alt(elev,s.r0,s.c0),alt(elev,s.r1,s.c1));
+                if(segment_alt > alt_limit)
+                    break;
+                s.width = width;
+                rivers_.push_back(s);
+                max_segment_length = std::max(s.length,max_segment_length);
 			}
 		}
+        std::cout<< "--- Total river segments: " << rivers_.size() << "; max river segment length " << max_segment_length << std::endl;
         close();
 	}
 
@@ -862,6 +911,7 @@ public:
 private:
    
     point_callback_type cb_;
+    std::list<segment> rivers_;
 
     int internal_pixel(int r,int c)
     {
