@@ -6,29 +6,22 @@
 #include <assert.h>
 #include <iostream>
 #include <sstream>
+#include <thread>
 
-#define USE_MT_SOLVER
-
-#ifdef USE_MT_SOLVER
-	#include <thread>
-
-	#ifdef _WIN32
-		#include <condition_variable>
-		#include <mutex>
-	#else
-		#include <pthread.h>
-	#endif
-
+#ifdef _WIN32
+#  include <condition_variable>
+#  include <mutex>
+#else
+#  include <pthread.h>
 #endif
 
 #ifndef _WIN32
-#include <fstream>
+#  include <fstream>
 #else
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
 #endif
 
 
@@ -72,29 +65,6 @@ std::string cpu_name()
 #endif
 
 
-template<typename Type>
-class kahan_sum {
-public:
-	kahan_sum() : sum_(), c_() {}
-	operator Type () const
-	{
-		return sum_;
-	}
-
-	kahan_sum const &operator+=(Type inp)
-	{
-		Type y=inp - c_;
-		Type t=sum_ + y;
-		c_ = (t - sum_)  - y;
-		sum_ = t;
-		return *this;
-	}
-private:
-	Type sum_;
-	Type c_;
-};
-
-
 class sparce_matrix {
 public:
 	struct row {
@@ -124,28 +94,22 @@ public:
 		}
 		assert(i<4);
 	}
-	float mpl(int N,float const *vin,float *vout) const;
-#ifdef USE_MT_SOLVER
-	float mpl(int from,int to,float const *vin,float *vout) const;
-#endif	
-
+	double mpl(int from,int to,float const *vin,float *vout) const;
 private:
 	std::vector<row> rows_;
 };
 
 
-#if defined USE_MT_SOLVER
-
 std::string solver_name()
 {
 	std::ostringstream ss;
-	ss << "CPU MT solver running on " << cpu_name() << "; " << std::thread::hardware_concurrency() << " threads";
+	ss << "CPU Solver running on " << cpu_name() << "; " << std::thread::hardware_concurrency() << " threads";
 	return ss.str();
 }
 
-float sparce_matrix::mpl(int from,int to,float const *vin,float *vout) const
+double sparce_matrix::mpl(int from,int to,float const *vin,float *vout) const
 {
-	kahan_sum<float> sum;
+	double sum = 0.0;
 	for(int i=from;i<to;i++) {
 		row r = rows_[i];
 		float v[4]= { 
@@ -162,9 +126,9 @@ float sparce_matrix::mpl(int from,int to,float const *vin,float *vout) const
 	return sum;
 }
 
-float sum(float const *v,int n)
+double sum(double const *v,int n)
 {
-	float r=0;
+	double r=0;
 	for(int i=0;i<n;i++)
 		r+=v[i];
 	return r;
@@ -247,9 +211,9 @@ std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x
 	float th2=thresh*thresh;
 
 	A.mpl(0,N,x,r);
-	float grsold=0;
+	double grsold=0;
 	{
-		kahan_sum<float> rsold_s;
+		double rsold_s=0.0;
 		for(int i=0;i<N;i++) {
 			p[i] = r[i]=b[i]-r[i];
 			rsold_s+=r[i]*r[i];
@@ -259,23 +223,23 @@ std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x
 	
 	int threads = std::thread::hardware_concurrency();
 
-	std::vector<float> pAp_acc(threads);
-	std::vector<float> rsnew_acc(threads);
+	std::vector<double> pAp_acc(threads);
+	std::vector<double> rsnew_acc(threads);
 	std::vector<std::thread> tasks(threads);
 	barrier bar(threads);
 
 	int iters;
 	auto runner = [&](int from,int to,int id) {	
-		float rsold = grsold;
+		double rsold = grsold;
 		for(int it=0;it<limit;it++) {
-			float mypAp = A.mpl(from,to,p,Ap);
+			double mypAp = A.mpl(from,to,p,Ap);
 			pAp_acc[id]=mypAp;
 			bar.wait();
 
-			float pAp = sum(pAp_acc.data(),threads);
+			double pAp = sum(pAp_acc.data(),threads);
 
 			float alpha = rsold / pAp;
-			kahan_sum<float> myrsnew;
+			double myrsnew=0.0;
 			for(int i=from;i<to;i++) 
 				x[i]+=alpha*p[i];
 			for(int i=from;i<to;i++) {
@@ -285,7 +249,7 @@ std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x
 			}
 			rsnew_acc[id] = myrsnew;
 			bar.wait();
-			float rsnew = sum(rsnew_acc.data(),threads);
+			double rsnew = sum(rsnew_acc.data(),threads);
 
 			if(rsnew < th2) {
 				if(id == 0)
@@ -316,89 +280,6 @@ std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x
 	return std::make_pair(iters,time);
 }
 
-
-#else
-
-std::string solver_name()
-{
-	return "Single Thread solver running on " + cpu_name();
-}
-
-float sparce_matrix::mpl(int N,float const *vin,float *vout) const
-{
-	int size = rows_.size();
-	kahan_sum<float> r;
-	for(int i=0;i<size;i++) {
-		row const &r = rows_[i];
-		float v[4]= { 
-			vin[r.c[0]],  
-			vin[r.c[1]],  
-			vin[r.c[2]],  
-			vin[r.c[3]]
-		};
-		float a = vin[i];
-		float b=a + (v[0]*r.v[0]+v[1]*r.v[1]+v[2]*r.v[2]+v[3]*r.v[3]);
-		vout[i]=b;
-		r+=a*b;
-	}
-	return r;
-}
-
-// CPU single thread
-std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x,float thresh=1e-8,int limit=-1)
-{
-	std::vector<float> rv(N,0);
-	std::vector<float> pv(N,0);
-	std::vector<float> Apv(N,0);
-
-	float *r=rv.data();
-	float *p=pv.data();
-	float *Ap = Apv.data();
-
-	if(limit==-1)
-		limit=N;
-	
-	float th2=thresh*thresh;
-
-	A.mpl(N,x,r);
-	float rsold=0;
-	kahan_sum<float> rsold_sum;
-	for(int i=0;i<N;i++) {
-		p[i] = r[i]=b[i]-r[i];
-		rsold_sum+=r[i]*r[i];
-	}
-	rsold = rsold_sum;
-	int it;
-	float rsnew = 0;	
-
-	auto start_ts = std::chrono::high_resolution_clock::now();
-	for(it=0;it<limit;it++) {
-		float pAp = A.mpl(N,p,Ap);
-		float alpha = rsold / pAp;
-		for(int i=0;i<N;i++)  
-			x[i]+=alpha*p[i];
-		rsnew=0;
-		kahan_sum<float> rsnew_sum;
-		int id=0;
-		int pos=0;
-		for(int i=0;i<N;i++) {
-			float tmp = r[i] - alpha*Ap[i];
-			rsnew_sum += tmp*tmp;
-		}
-		rsnew = rsnew_sum;
-		if(rsnew < th2)
-			break;
-		float factor = rsnew / rsold;
-		for(int i=0;i<N;i++)
-			p[i]=r[i]+factor*p[i];
-		rsold = rsnew;
-	}
-	auto end_ts = std::chrono::high_resolution_clock::now();
-	double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end_ts-start_ts).count();
-	return std::make_pair(it,time);
-}
-
-#endif
 
 
 class eq_solver {

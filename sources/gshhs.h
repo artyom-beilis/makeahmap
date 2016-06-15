@@ -44,23 +44,20 @@
 #include <map>
 #include <queue>
 
+extern std::string output_dir;
+
 struct water_properties {
     double lat_shift;
     double lon_shift;
     int max_level;
     int default_width;
     std::map<int,int> level_to_width;
-    std::map<int,int> start_points;
-    int colors[4];
-    int depth_range[4];
     water_properties() :
         lat_shift(0.0),
         lon_shift(0.0),
         max_level(3), // major rivers only
-        default_width(1000),
-        level_to_width({ { 1, 2000 }, { 2, 1500  }, { 3 , 1000 }  }),
-        colors(),
-        depth_range()
+        default_width(1900),
+        level_to_width({ { 1, 2500 }, { 2, 2200  }, { 3 , 1900 }  })
     {
     }
 };
@@ -416,7 +413,7 @@ public:
 				
 			}
 		}
-		std::ofstream f("alt.pgm",std::ios::binary);
+		std::ofstream f((output_dir + "/elevation_mapping.pgm").c_str(),std::ios::binary);
 		f<<"P5 " << map_size << " " << map_size << " 255\n";
 		for(int r=map_size-1;r>=0;r--)
 			f.write(reinterpret_cast<char *>(&map[r][0]),map_size);
@@ -488,8 +485,8 @@ public:
         }
         std::cout << "    Maximal correction  range max=" << maxv << " min="<<minv << std::endl;
         std::vector<std::vector<int16_t> > ndiff(water_size,std::vector<int16_t>(water_size));
-        std::ofstream mem("mem.pgm",std::ios::binary);
-        std::ofstream neg("neg.pgm",std::ios::binary);
+        std::ofstream mem((output_dir + "/sea_level.pgm").c_str(),std::ios::binary);
+        std::ofstream neg((output_dir + "/flatten_terrain.pgm").c_str(),std::ios::binary);
 		mem<<"P5 " << water_size << " " << water_size << " 255\n";
 		neg<<"P5 " << water_size << " " << water_size << " 255\n";
         int16_t max_diff = 0;
@@ -550,7 +547,7 @@ public:
     }
     void save_water_elev(std::vector<std::vector<int16_t> > &elev,int alt_limit)
     {
-        std::ofstream f("water_body.pgm",std::ios::binary);
+        std::ofstream f((output_dir + "/water_bodies.pgm").c_str(),std::ios::binary);
         f<<"P5 " << water_size << " " << water_size << " 255\n";
         for(int r=0;r<water_size;r++) {
             for(int c=0;c<water_size;c++) {
@@ -674,140 +671,6 @@ public:
         std::cout << "  Maximal correction is " << max_fix << std::endl;
     }
 #endif	
-    void save_waterc_map(std::string out,water_properties const &prop)
-	{
-		bmp::header hdr(16384,16384);
-        std::vector<unsigned char> zeros(16384,0);
-        int padding=(16384 - water_size)/2;
-        outfile f(out);
-        f.write(&hdr,sizeof(hdr));
-
-		std::vector<unsigned char> data(water_size);
-        
-
-		int pos = 0;
-        for(int i=0;i<padding;i++)
-            f.write(&zeros[0],16384);
-		for(int r=0;r<water_size;r++) {
-			for(int c=0;c<water_size;c++,pos++)  {
-                int type = (watermap[pos / 4] >> ((pos % 4)*2)) & 0x3;
-                unsigned char color = prop.colors[type];
-                data[c]=color;
-			}
-            f.write(&zeros[0],padding);
-			f.write(&data[0],data.size());
-            f.write(&zeros[0],padding);
-		}
-        for(int i=0;i<padding;i++)
-            f.write(&zeros[0],16384);
-        f.close();
-	}
-
-	void save_waterd_map(std::string out,water_properties const &prop)
-	{
-        water_types.clear();
-        
-        water_types.resize(water_size/4,std::vector<unsigned char>(water_size/4,0));
-        
-		bmp::header hdr(16384,16384);
-        std::vector<unsigned char> zeros(16384,0);
-        int padding=(16384 - water_size)/2;
-        outfile f(out);
-		f.write(&hdr,sizeof(hdr));
-        
-		std::vector<unsigned char> data(water_size);
-
-        std::vector<int> lut[4];
-        for(int i=0;i<4;i++) {
-            int l = prop.depth_range[i];
-            int l2 = l*l;
-            lut[i].resize(l2+1,0);
-            for(int j=0;j<l2;j++) {
-                int v=int(round(sqrt(l2-j) * 254 / l));
-                if(v<0)
-                    v=0;
-                if(v>254)
-                    v=254;
-                lut[i][j]=v;
-            }
-        }
-
-		int pos = 0;
-        for(int i=0;i<padding;i++)
-            f.write(&zeros[0],16384);
-        int prev_percent = -1;
-        
-		for(int r=0;r<water_size;r++) {
-            int percent = (r+1) * 100 / water_size;
-            if(percent != prev_percent) {
-                if(prev_percent!=-1)
-                    std::cout << "\b\b\b\b\b";
-                prev_percent = percent;
-                std::cout << std::setw(3) << percent << "% " << std::flush;
-            }
-
-            bool prev_water_only = false;
-            int prev_type = -1;
-			for(int c=0;c<water_size;c++,pos++)  {
-                int type = internal_pixel(r,c);
-                if(type == land_mark) {
-                    prev_type = land_mark;
-                    prev_water_only = false;
-                    data[c] = 255;
-                    continue;
-                }
-                int depth_dist = prop.depth_range[type];
-                if(depth_dist == 0) {
-                    prev_water_only = false;
-                    prev_type = type;
-                    data[c] = 0;
-                    continue;
-                }
-                int closest_dist2 = depth_dist * depth_dist;
-                
-                int r_start = std::max(r-depth_dist,0);
-                int r_end  = std::min(r+depth_dist,water_size-1);
-                int c_start = std::max(c-depth_dist,0);
-                int c_end  = std::min(c+depth_dist,water_size-1);
-
-                if(prev_water_only && prev_type == type) {
-                    c_start = c_end;
-                }
-                bool water_only = true;
-                for(int tr = r_start,dr=r_start - r;tr<=r_end;tr++,dr++) {
-                    int r2 = dr*dr;
-                    for(int tc = c_start,dc = c_start - c;tc<=c_end;tc++,dc++) {
-                        int type = internal_pixel(tr,tc);
-                        if(type == land_mark) {
-                            int c2 = dc*dc;
-                            int D = r2 + c2;
-                            if(D < closest_dist2)
-                                closest_dist2 = D;
-                            water_only = false;
-                        }
-                    }
-                }
-                prev_water_only = water_only;
-                prev_type = type;
-                
-                data[c] = lut[type][closest_dist2];
-			}
-            for(int c=0;c<water_size;c++) {
-                int type = internal_pixel(r,c);
-                int type_c = c/4;
-                int type_r = (water_size - 1 - r)/4;
-                water_types[type_r][type_c] |= 1u << (type*2);
-                if(type != land_mark && data[c]!=0)
-                    water_types[type_r][type_c] |= 2u << (type*2);
-            }
-            f.write(&zeros[0],padding);
-			f.write(&data[0],data.size());
-            f.write(&zeros[0],padding);
-		}
-        for(int i=0;i<padding;i++)
-            f.write(&zeros[0],16384);
-        f.close();
-	}
     
     typedef std::function<void(int/*id*/,int /*segment*/,int/*r*/,int/*c*/)> point_callback_type;
     
@@ -843,9 +706,6 @@ public:
             if(prop.max_level != -1 && level > prop.max_level)
                 continue;
             int end_point = 0;
-            auto black_list = prop.start_points.find(hdr.id);
-            if(black_list!=prop.start_points.end())
-                end_point = black_list->second;
 			for(int i=0;i<points;i++) {
                 poly[i].y+=lat_shift;
                 poly[i].x+=lon_shift;

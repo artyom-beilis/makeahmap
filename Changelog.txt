@@ -1,3 +1,8 @@
+2016-06-15: Version 1.4alpha
+
+- Small improvements in CPU solver
+- Improved config ini and defaults
+
 2016-06-13: Version 1.3alpha
 
 - Modified water generation 
@@ -19,96 +24,3 @@
 
 Initial very basic support of AH3 - only clipboard map and elevations are generated
 all lakes put to alt=0 no reivers no ground cover
-
-
-2013-10-29: Version 0.6
-
-Bug fixes:
-
-- Changed download_sources.txt line endings to CR/LF to make them more windows friendly
-
-New features:
-
-- Implemented automatic clipboard map generation
-
-2013-10-29: Version 0.5
-
-Bug fixes:
-
-- Fixed river rendering to have proper width for rivers at NW/SW directions
-- Fixed river width meaning now it really river width in pixels not 1+2*w
-- Fixed support of spaces in path names
-
-New features:
-
-- Added support of fully automatic data download
-- Improved config.ini syntax and error reporting
-- Improved error reporting in case of problems with file access
-- Added support of custom gndtype for the areas were water and land are mixed or not ocean depth water exits
-- Added support of water depth variation near shores
-- Added support of river width per river level
-- Added more fine grained river removal such as a part of river is removed rather than entire one
-
-2013-10-24:  Version 0.4
-
-Bug fixes:
-
-- Fixed incorrect file generation for terrains of size < 512
-- Fixed trees appearing over the water
-
-New features:
-
-- Added an option to shift river position globally in attempt to correct 
-  alignment issues
-
-
-2013-10-23:  Version 0.3
-
-Bug fixes:
-
-- Fixed crash when rendering terrain at far east globe locations
-
-New features:
-
-- Added support of automatic terrain altitude corrections such that:
-
-  (a) The water slopes of rivers are below 120 feet per mile
-  (b) Lake water has same altitude all over the lake
-  (c) Altitude corrections near sea shores are much more accurate 
-  
-- Added support of automatic rivers removal if they create too big
-  terrain changes - create to deep canyons.
-  
-  By setting parameter river_correction_limit you can remove such rivers.
-  
-  The program would run two passes - first to detect the rivers during
-  altitude correction and second actual correction after removing problematic
-  rivers.
-
-2013-10-22:  Version 0.2
-
-Bug fixes:
-
-- Fixed bug of not generating shores in Western Hemisphere
-- Fixed bug of the scale parameter not being used.
-- Fixed elevations near sea-shores - set to 0 to reduce water slope problems
-- Removed rivers near edges of terrain - reduce amount of slope issues
-- All rivers now have beaches
-
-New features:
-
-- Added support of SRTM30/GTOPO30 elevaion database (that is much smaller but yet accurate enough for most purposes)
-- Added selection of river levels to draw
-- Added suppport of gz compression of GSHHS and DEM files such that DEM/hgt and gshhs files can be gz-compressed
-- Added custom globcover to AH tiles support (groundmapping.csv)
-- Initial clipboardmap generation (not really useful)
-
-
-2013-10-19:  Version 0.1
-
-- Added support of GSHHS database for shores generation
-- It is possible to use central point latitude/logitude + scale to select a region
-
-2013-10-16: Version 0.0
-
-- Initial alpha release

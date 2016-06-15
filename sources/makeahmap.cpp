@@ -58,14 +58,13 @@ double lat1 = -1000,lat2 = -1000;
 double lon1 = -1000,lon2 = -1000;
 
 water_properties rv_prop;
-int ground_types[4];
 
 double river_north_shift = 0.0;
 double river_east_shift = 0.0;
 bool fix_river_slopes = true;
-int lake_alt_limit = 30000; //higher than everest
-double lake_or_island_min_size = 0.0; // sq miles
-double water_to_land_slope = 0.176; 
+int water_alt_limit = 30000; //higher than everest
+double lake_or_island_min_size = 0.5; // sq miles
+double water_to_land_slope = 0.1; 
 int water_to_land_range = 100; // feet
 
 std::string map_name = "map";
@@ -485,8 +484,8 @@ void load_profile(std::string file_name)
             else if(key == "grid_dir") {
                 grid_dir = value;
             }
-			else if(key == "lake_alt_limit") {
-				lake_alt_limit = atoi(value.c_str());
+			else if(key == "water_alt_limit") {
+				water_alt_limit = atoi(value.c_str());
 			}
 			else if(key == "lake_or_island_min_size") {
 				lake_or_island_min_size = atof(value.c_str());
@@ -517,45 +516,11 @@ void load_profile(std::string file_name)
             else if(key == "river_level") {
                 rv_prop.max_level = atoi(value.c_str());
             }
-            else if(key == "river_correction_limit") {
-                river_correction_limit = atoi(value.c_str());
-            }
-            else if(key == "river_removal_policy") {
-                if(value == "full")
-                    remove_entire_river = true;
-                else if(value == "partial")
-                    remove_entire_river = false;
-                else 
-                    throw parsing_error("Invalid value " + value +" for key " + key + " expected 'full' or 'partial'");
-            }
             else if(key == "river_north_shift") {
                 river_north_shift = atof(value.c_str());
             }
             else if(key == "river_east_shift") {
                 river_east_shift = atof(value.c_str());
-            }
-            else if(key == "water_color[]") {
-                int mark = get_type_index(index);
-                if(mark < 0)
-                    throw parsing_error("Invalid index " + index + " for water_color[]");
-                rv_prop.colors[mark]=atoi(value.c_str());
-            }
-            else if(key == "depth_range[]") {
-                double d = atof(value.c_str());
-                int pixels  = int(round(d * 32.0));
-                int type = get_type_index(index);
-                if(type < 0 || type == water_generator::land_mark) {
-                    throw parsing_error("Invalid index for depth_range[] - required one of sea, lake or river");
-                }
-                rv_prop.depth_range[type]=pixels;
-            }
-            else if(key == "ground_type[]") {
-                int gtype = atoi(value.c_str());
-                int type = get_type_index(index);
-                if(type < 0 || type == water_generator::land_mark) {
-                    throw parsing_error("Invalid index for ground_type[] - required one of sea, lake or river");
-                }
-                ground_types[type]=gtype;
             }
             else if(key == "globcover_tiff_path") {
                 tiff_file = value;
@@ -850,51 +815,6 @@ void save_height_file()
     f.close();
 }
 
-
-void update_gndtype(water_generator &gen)
-{
-    int gnd_size = map_size * 8;
-    assert(gen.water_types.size()==size_t(gnd_size));
-    
-    for(int r=0;r<gnd_size;r++) {
-        for(int c=0;c<gnd_size;c++) {
-            bool has_land = false;
-            bool has_water = false;
-            bool has_depth = false;
-            int dominant_type = -1;
-            unsigned type = gen.water_types[r][c];
-            if(type & 1u<<(water_generator::land_mark*2)) {
-                has_land = true;
-            }
-            int codes[3] = { water_generator::sea_mark, water_generator::lake_mark, water_generator::river_mark };
-            for(int i=0;i<3;i++) {
-                int code = codes[i];
-                if(type & 0x3u <<(code*2)) {
-                    has_water = true;
-                    if(dominant_type == -1)
-                        dominant_type = codes[i];
-                    if(type & 0x2u << (code*2))  {
-                        has_depth = true;
-                        break;
-                    }
-                }
-            }
-            int current_type = types[r][c];
-            if(has_land && !has_water) {
-                if(current_type == 0)
-                    current_type = beach_type;
-            }
-            else if(has_water && !has_land && !has_depth) {
-                current_type = 0;
-            }
-            else if(has_water && (has_land || has_depth)) {
-                assert(dominant_type!=-1);
-                current_type = ground_types[dominant_type];
-            }
-            types[r][c]=current_type;
-        }
-    }
-}
 
 int row_from_lat(double lat,int height)
 {
@@ -1526,11 +1446,11 @@ int main(int argc,char **argv)
         
         water_generator gen(lat1,lat2,lon1,lon2,map_size * 8);
         std::cout << "- Loading & processing shores data. " << std::endl;
-        gen.load_land(shores,elevations,lake_or_island_min_size,lake_alt_limit);
+        gen.load_land(shores,elevations,lake_or_island_min_size,water_alt_limit);
         
         if(rv_prop.max_level != 0) {
             std::cout << "- Loading & processing rivers data... " << std::endl;
-            gen.load_rivers(rivers,elevations,rv_prop,lake_alt_limit);
+            gen.load_rivers(rivers,elevations,rv_prop,water_alt_limit);
             std::cout << "  Complete" << std::endl;
         }
         
@@ -1541,7 +1461,6 @@ int main(int argc,char **argv)
         std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;
         write_reference_bmp();
         recolor();
-        //update_gndtype(gen);
         std::cout << "Done" << std::endl;
         // */
         // make_beaches();
