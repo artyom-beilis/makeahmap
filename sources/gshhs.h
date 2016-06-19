@@ -155,6 +155,18 @@ public:
 	
 	water_generator(double flat1,double flat2,double flon1,double flon2,int water_size_in)
 	{
+
+        // Note to calculations
+        // since the lat1 refers to top left point and lat2 is not represented BUT
+        // the watermap is ordered in different direction than elevations with fix the 
+        // coordinates
+
+        double lat_step = (flat2 - flat1) / water_size_in;
+        flat1 = flat1 + lat_step;
+        flat2 = flat2 + lat_step;
+
+        /// end fix
+
 		mark_lake_river_as_river = false;
 		lat1=int(round(1e6*flat1));
 		lat2=int(round(1e6*flat2));
@@ -485,10 +497,8 @@ public:
         }
         std::cout << "    Maximal correction  range max=" << maxv << " min="<<minv << std::endl;
         std::vector<std::vector<int16_t> > ndiff(water_size,std::vector<int16_t>(water_size));
-        std::ofstream mem((output_dir + "/sea_level.pgm").c_str(),std::ios::binary);
-        std::ofstream neg((output_dir + "/flatten_terrain.pgm").c_str(),std::ios::binary);
-		mem<<"P5 " << water_size << " " << water_size << " 255\n";
-		neg<<"P5 " << water_size << " " << water_size << " 255\n";
+        std::ofstream mem((output_dir + "/sea_level.ppm").c_str(),std::ios::binary);
+		mem<<"P6 " << water_size << " " << water_size << " 255\n";
         int16_t max_diff = 0;
         for(int r=0;r<water_size;r++) {
             for(int c=0;c<water_size;c++) {
@@ -506,15 +516,31 @@ public:
                         elev[r][c]=1;
                     }
                 }
-                float v=(prev_values[r][c]-minv) / (maxv-minv) * 254;
-                unsigned char color=static_cast<unsigned char>(v);
-                mem<<color;
+                float v=prev_values[r][c];
+                unsigned char red=0,green=0,blue=0;
+                float factor = 0;
+                if(maxv - minv > 0)
+                    factor = 255.0/std::max(maxv,-minv);
+                if(v < 0) {
+                    red=static_cast<unsigned char>(factor * -v);
+                }
+                else {
+                    green=static_cast<unsigned char>(factor *  v);
+                }
+                mem <<red << green << blue;
             }
         }
         std::cout << "    Maximal land modificationt to below 0 alt " << max_diff << std::endl;
-        for(int r=0;r<water_size;r++)
-            for(int c=0;c<water_size;c++)
-                neg << static_cast<unsigned char>(ndiff[r][c]*255/max_diff);
+        if(max_diff != 0) {
+            std::ofstream neg((output_dir + "/flatten_terrain.pgm").c_str(),std::ios::binary);
+		    neg<<"P5 " << water_size << " " << water_size << " 255\n";
+            for(int r=0;r<water_size;r++)
+                for(int c=0;c<water_size;c++)
+                    neg << static_cast<unsigned char>(ndiff[r][c]*255/max_diff);
+        }
+        else {
+            remove((output_dir + "/flatten_terrain.pgm").c_str());
+        }
     }
     struct bounding_box {
         int rmin,rmax;
@@ -554,6 +580,7 @@ public:
                 float alt = elev[r][c];
                 int ialt = alt/alt_limit * 127 + 127;
                 unsigned char calt = std::max(0,std::min(255,ialt));
+                calt = alt <= 0 ? 0 : 255;
                 f<<calt;
             }
         }
