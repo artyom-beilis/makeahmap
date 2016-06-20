@@ -695,20 +695,16 @@ void write_reference_bmp()
     outfile f(fname);
     int rows = types.size();
     int cols = types[0].size();
-    bmp::header hdr(rows,cols,32);
+    bmp::header hdr(rows,cols);
 
     f.write(&hdr,hdr.offset);
     
 	std::vector<bmp::rgbq> c(cols);
     for(int i=types.size()-1;i>=0;i--) {
 		for(int j=0;j<cols;j++) {
-			int color = types[i][j];
-			c[j].r = color;
-			c[j].g = color;
-			c[j].b = color;
-			c[j].res = 0;
+			unsigned char color = types[i][j];
+            f.write(&color,1);
 		}
-        f.write(reinterpret_cast<char*>(&c[0]),cols*4);
     }
     f.close();
 }
