@@ -1,3 +1,10 @@
+2016-06-15: Version 1.5beta
+
+- Fixed 660 feet (1 edge of ground) alignmnent issue between water bodies and elevations
+- Fixed crash when no altitude modifications are performed
+- Fixed generation of raw file for maps smaller than 512x512 miles
+- Improved debug output to color elevations map
+
 2016-06-15: Version 1.4alpha
 
 - Small improvements in CPU solver
