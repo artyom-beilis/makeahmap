@@ -805,9 +805,24 @@ void save_height_file()
 {
     std::string elev_file = output_dir +"/" + map_name + ".raw";
     outfile f(elev_file);
+	int size = elevations.size();
+	int padding = (4096 - size)/2;
+	std::vector<char> zero(4096*2,0);
+	if(padding > 0) {
+		for(int i=0;i<padding;i++)
+			f.write(zero.data(),zero.size());
+	}
     for(int i=elevations.size()-1;i>=0;i--) {
+		if(padding > 0)
+			f.write(zero.data(),padding*2);
         f.write(&elevations[i][0],elevations[i].size()*2);
+		if(padding > 0)
+			f.write(zero.data(),padding*2);
     }
+	if(padding > 0) {
+		for(int i=0;i<padding;i++)
+			f.write(zero.data(),zero.size());
+	}
     f.close();
 }
 
