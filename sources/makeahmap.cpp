@@ -654,6 +654,9 @@ void load_profile(std::string file_name)
     if(db_type.rows == 0) {
         throw std::runtime_error("Configuration error: undefined dem - should be one of srtm30, srtm3, gtopo30");
     }
+    if(db_type.code == "srtm3" && (lat1 > 60 || lat2 > 60)) {
+        throw std::runtime_error("Latitude above N60 is not supported with srtm3, please use srtm30");
+    }
     if(!dem_prefix.empty()) {
         db_type.directory = dem_prefix;
     }
