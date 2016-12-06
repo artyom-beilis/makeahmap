@@ -45,6 +45,7 @@
 
 std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
+int cbm_size = -1;
 int river_correction_limit = -1;
 bool remove_entire_river = false;
 dem::db_properties db_type;
@@ -436,6 +437,9 @@ void load_profile(std::string file_name)
                 default:
                     throw parsing_error("Invalid map size " + value);
                 }
+            }
+            else if(key == "cbm_size") {
+                cbm_size = atoi(value.c_str());
             }
             else if(key=="type_mapping") {
                 custom_mapping = value;
@@ -1236,8 +1240,30 @@ std::vector<std::vector<bool> > load_grid(size_t tsize)
 
 void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &elev)
 {
-    int tsize = 1024;
-    std::vector<std::vector<bool> > grid = load_grid(tsize);
+    int tsize;
+    if(cbm_size == -1) {
+        if(map_size == 512)
+            tsize = 2048;
+        else
+            tsize = 1024;
+    }
+    else
+        tsize = cbm_size;
+
+    std::vector<std::vector<bool> > grid;
+    try {
+        std::vector<std::vector<bool> > tmp = load_grid(tsize);
+        grid.swap(tmp);
+    }
+    catch(std::exception const &e) {
+        std::cout << "\n    Failed to load grid texture: " << e.what() 
+                  << "\n    falling back to 1024x1024 size\n";
+        
+        tsize=1024;
+        std::vector<std::vector<bool> > tmp = load_grid(1024);
+        grid.swap(tmp);
+    }
+
     bmp::header h(tsize,tsize);
     make_map_color_index(h);
     std::string map_file = output_dir +"/" + map_name + ".bmp";
