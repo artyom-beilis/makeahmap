@@ -1,3 +1,9 @@
+2016-12-30: Version 1.6
+
+- Fixed problem with downloading over HTTPs - swithced to URLDownloadToFile instead of libcurl
+- Added support of variable CBM size - default CMB is 2048x2048 for 512 miles map
+- Added error for using SRMT3 for lattitude above N60
+
 2016-06-15: Version 1.5beta
 
 - Fixed 660 feet (1 edge of ground) alignmnent issue between water bodies and elevations
