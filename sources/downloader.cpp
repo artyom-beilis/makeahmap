@@ -22,7 +22,11 @@
 
 #include "downloader.h"
 
+#if defined WIN32 && ! defined USE_CURL_ON_WINDOWS
+#include <urlmon.h>
+#else
 #include <curl/curl.h>
+#endif
 #include <zlib.h>
 #include <stdexcept>
 #include <string>
@@ -35,6 +39,9 @@
 #include <sstream>
 #include <libgen.h>
 #include <dirent.h>
+
+
+
 
 
 namespace downloader {
@@ -71,6 +78,56 @@ namespace downloader {
         }
     }
 
+	#if defined WIN32 && !defined USE_CURL_ON_WINDOWS
+	
+	class winprogress : public IBindStatusCallback  
+	{
+	public:
+
+		winprogress() : percent_(-1) {}
+		
+		void done()
+		{
+			if(percent_!=100)
+				downloader_progress_function(&percent_,1,1,0,0);
+		}
+		
+		// IUnknown
+		STDMETHOD_(ULONG,AddRef)()  { return 0; }
+		STDMETHOD(QueryInterface)(REFIID,void **) { return E_NOTIMPL; }
+		STDMETHOD_(ULONG,Release)() { return 0; }
+		// IBindStatusCallback		
+
+		STDMETHOD(GetBindInfo)(DWORD *,BINDINFO *) { return E_NOTIMPL; }
+		STDMETHOD(GetPriority)(LONG *) { return E_NOTIMPL; }
+		STDMETHOD(OnDataAvailable)(DWORD,DWORD,FORMATETC *,STGMEDIUM *) { return E_NOTIMPL; }
+		STDMETHOD(OnLowResource)(DWORD) { return E_NOTIMPL; }
+		STDMETHOD(OnObjectAvailable)(REFIID,IUnknown *)  { return E_NOTIMPL; }
+
+		STDMETHOD(OnProgress)(ULONG ulProgress,ULONG ulProgressMax,ULONG,LPCWSTR)
+		{
+			downloader_progress_function(&percent_,ulProgressMax,ulProgress,0,0);
+			return S_OK;
+		}
+		
+		STDMETHOD(OnStartBinding)(DWORD , IBinding *) { return E_NOTIMPL; }
+		STDMETHOD(OnStopBinding)(HRESULT,LPCWSTR){ return E_NOTIMPL; }
+		
+	private:
+		int percent_;
+	};
+
+	void manager::download_file(std::string url,std::string to)
+	{
+		winprogress st;
+		if(URLDownloadToFile(NULL,url.c_str(),to.c_str(),0,&st)!=S_OK) {
+			throw std::runtime_error("Failed to download file " + url + " to " + to);
+		}
+		st.done();
+	}
+	
+	#else
+	
     void manager::download_file(std::string url,std::string to)
     {
         std::string part = to + ".part";
@@ -105,6 +162,8 @@ namespace downloader {
         if(percent!=100)
             downloader_progress_function(&percent,1,1,0,0);
     }
+	
+	#endif
 
     void manager::untar(std::string tar_gz_file,std::string to_dir,std::string file_name)
     {
