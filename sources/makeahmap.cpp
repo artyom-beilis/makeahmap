@@ -216,29 +216,29 @@ static const int map_type_in[][3] = {
 };
 */
 static const int map_type_in[][2] = {
- { 11,  0x0000FF }, //Post-flooding or irrigated croplands (or aquatic)
- { 14,  0x0080FF }, //Rainfed croplands
- { 20,  0x0040FF }, //Mosaic cropland (50-70%) / vegetation (grassland/shrubland/forest) (20-50%)
- { 30,  0x004000 }, //Mosaic vegetation (grassland/shrubland/forest) (50-70%) / cropland (20-50%) 
- { 40,  0xA00000 }, //Closed to open (>15%) broadleaved evergreen or semi-deciduous forest (>5m)
- { 50,  0xA00000 }, //Closed (>40%) broadleaved deciduous forest (>5m)
- { 60,  0xA00000 }, //Open (15-40%) broadleaved deciduous forest/woodland (>5m)
- { 70,  0xA00000 }, //Closed (>40%) needleleaved evergreen forest (>5m)
- { 90,  0xA00000 }, //Open (15-40%) needleleaved deciduous or evergreen forest (>5m)
- { 100, 0x800000 }, //Closed to open (>15%) mixed broadleaved and needleleaved forest (>5m)
- { 110, 0x0080FF }, //Mosaic forest or shrubland (50-70%) / grassland (20-50%)
- { 120, 0x0080FF }, //Mosaic grassland (50-70%) / forest or shrubland (20-50%) 
- { 130, 0x500000 }, //Closed to open (>15%) (broadleaved or needleleaved, evergreen or deciduous) shrubland (<5m)
- { 140, 0x500000 }, //Closed to open (>15%) herbaceous vegetation (grassland, savannas or lichens/mosses)
- { 150, 0x200000 }, //Sparse (<15%) vegetation
- { 160, 0x800000 }, //Closed to open (>15%) broadleaved forest regularly flooded (semi-permanently or temporarily) - Fresh or brackish water
- { 170, 0x800000 }, //Closed (>40%) broadleaved forest or shrubland permanently flooded - Saline or brackish water
- { 180, 0x700000 }, //Closed to open (>15%) grassland or woody vegetation on regularly flooded or waterlogged soil - Fresh, brackish or saline water
- { 190, 0x00C0FF },    // type 19 Artificial surfaces and associated areas (Urban areas >50%)
- { 200, 0x000000 },    // type 0 Bare areas
- { 210, 0x100000 },    // type 1 Waterbodies
- { 220, 0xF00000 },    // type 15 Permanent snow and ice
- { 230, 0x000000 },    // type 0 No data (burnt areas, clouds,…)
+ { 11,  16 }, //Post-flooding or irrigated croplands (or aquatic)
+ { 14,  18 }, //Rainfed croplands
+ { 20,  17 }, //Mosaic cropland (50-70%) / vegetation (grassland/shrubland/forest) (20-50%)
+ { 30,  17 }, //Mosaic vegetation (grassland/shrubland/forest) (50-70%) / cropland (20-50%) 
+ { 40,  9 }, //Closed to open (>15%) broadleaved evergreen or semi-deciduous forest (>5m)
+ { 50,  10 }, //Closed (>40%) broadleaved deciduous forest (>5m)
+ { 60,  8 }, //Open (15-40%) broadleaved deciduous forest/woodland (>5m)
+ { 70,  10 }, //Closed (>40%) needleleaved evergreen forest (>5m)
+ { 90,  8 }, //Open (15-40%) needleleaved deciduous or evergreen forest (>5m)
+ { 100, 9 }, //Closed to open (>15%) mixed broadleaved and needleleaved forest (>5m)
+ { 110, 17 }, //Mosaic forest or shrubland (50-70%) / grassland (20-50%)
+ { 120, 16 }, //Mosaic grassland (50-70%) / forest or shrubland (20-50%) 
+ { 130, 5 }, //Closed to open (>15%) (broadleaved or needleleaved, evergreen or deciduous) shrubland (<5m)
+ { 140, 5 }, //Closed to open (>15%) herbaceous vegetation (grassland, savannas or lichens/mosses)
+ { 150, 2 }, //Sparse (<15%) vegetation
+ { 160, 8 }, //Closed to open (>15%) broadleaved forest regularly flooded (semi-permanently or temporarily) - Fresh or brackish water
+ { 170, 8 }, //Closed (>40%) broadleaved forest or shrubland permanently flooded - Saline or brackish water
+ { 180, 7 }, //Closed to open (>15%) grassland or woody vegetation on regularly flooded or waterlogged soil - Fresh, brackish or saline water
+ { 190, 19 },    // type 19 Artificial surfaces and associated areas (Urban areas >50%)
+ { 200, 0 },    // type 0 Bare areas
+ { 210, 1 },    // type 1 Waterbodies
+ { 220, 15 },    // type 15 Permanent snow and ice
+ { 230, 0 },    // type 0 No data (burnt areas, clouds,…)
  { -1, 0}
 };
 
@@ -277,6 +277,14 @@ static const int map_in[][4] = {
 
 static unsigned char tmap[256][3];
 
+unsigned tile_to_color(unsigned type)
+{
+	if(type < 16u) 
+		type = type << (4 + 16);
+	else 
+		type = (((type - 16u) * 0x40u) << 8) + 0xFF;
+	return type;
+}
 void prepare_map()
 {
     for(int i=0;map_in[i][0]!=-1;i++) {
@@ -284,8 +292,7 @@ void prepare_map()
             tmap[map_in[i][0]][j]=map_in[i][j+1];
     }
 	for(int i=0;map_type_in[i][0]!=-1;i++) {
-		//std::cout << std::dec << map_type_in[i][0] << "->" << std::hex <<map_type_in[i][1] << std::dec << std::endl;
-        map_type[map_type_in[i][0]] = map_type_in[i][1];
+        map_type[map_type_in[i][0]] = tile_to_color(map_type_in[i][1]);
     }
 }
 
@@ -309,13 +316,13 @@ void load_custom_type_mapping()
         unsigned gcover=0,ah=0;
         char c;
 
-        ss >> std::dec >> gcover >> c >> std::hex >> ah;
-        if(!ss || c!=',' || gcover >255 || ah > 0xFFFFFF) {
+        ss >> std::dec >> gcover >> c >> ah;
+        if(!ss || c!=',' || gcover >255u || ah > 19u) {
             std::ostringstream tmp;
             tmp << "Invalid line " << lineno << " in file " << custom_mapping;
             throw std::runtime_error(tmp.str());
         }
-        map_type[gcover]=ah;
+        map_type[gcover]=tile_to_color(ah);
     }
 }
 
@@ -725,6 +732,33 @@ void recolor()
         }
     }
 }
+/*
+void low_pass_filter_splattype()
+{
+   int filter_1[] = {
+	1,   2,   1,
+	2,   4,   2,
+	1,   2,   1
+   }
+	
+	1    4    6    4    1
+    4   16   24   16    4
+    6   24   36   24    6
+    4   16   24   16    4
+    1    4    6    4    1
+	
+	 1     6    15    20    15     6     1
+     6    36    90   120    90    36     6
+    15    90   225   300   225    90    15
+    20   120   300   400   300   120    20
+    15    90   225   300   225    90    15
+     6    36    90   120    90    36     6
+     1     6    15    20    15     6     1
+
+	const int size = 3;
+}
+*/
+
 
 void write_gndtype()
 {
