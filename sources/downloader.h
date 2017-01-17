@@ -29,13 +29,13 @@ namespace downloader {
     class manager {
     public:
         static manager &instance();
-        void init(std::string profile,std::string temp_dir,bool enable_download);
+        void init(std::string profile,std::string temp_dir,bool enable_download,bool disable_ssl_check);
         bool check(std::string real_file_name,std::string file_code,bool should_exist = true);
     private:
 
         static std::string file_target(std::string file);
         static void file_target(std::string &file,std::string &target);
-        static void download_file(std::string url,std::string to);
+        void download_file(std::string url,std::string to);
         static void unzip(std::string zip_file,std::string to_dir,std::string file1,std::string file2=std::string());
         static void gzip(std::string input,std::string output);
         static void untar(std::string tar_gz_file,std::string to_dir,std::string file_name);
@@ -53,6 +53,7 @@ namespace downloader {
         std::map<std::string,file_data> profile_;
         std::string temp_dir_;
         bool enabled_;
+        bool disable_ssl_check_;
     };
 
 } // namespce

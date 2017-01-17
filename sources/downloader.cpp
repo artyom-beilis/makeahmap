@@ -143,6 +143,8 @@ namespace downloader {
         curl_easy_setopt(curl,CURLOPT_WRITEFUNCTION,downloader_write_data);
         curl_easy_setopt(curl,CURLOPT_NOPROGRESS,0l);
         curl_easy_setopt(curl,CURLOPT_PROGRESSDATA,&percent);
+        if(disable_ssl_check_)
+            curl_easy_setopt(curl,CURLOPT_SSL_VERIFYPEER,0l);
         curl_easy_setopt(curl,CURLOPT_PROGRESSFUNCTION,downloader_progress_function);   
         CURLcode res = curl_easy_perform(curl);
         bool write_fail = ferror(fout) || fclose(fout) != 0;
@@ -424,10 +426,11 @@ namespace downloader {
         return true;
     }
 
-    void manager::init(std::string profile,std::string temp_dir,bool enabled)
+    void manager::init(std::string profile,std::string temp_dir,bool enabled,bool disable_ssl_check)
     {
         temp_dir_ = temp_dir;
         enabled_ = enabled;
+        disable_ssl_check_ = disable_ssl_check;
         profile_.clear();
 
         std::ifstream in(profile.c_str());

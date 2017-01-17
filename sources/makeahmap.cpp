@@ -78,6 +78,7 @@ std::string output_dir = "./output";
 std::string download_sources = "download_sources.txt";
 std::string temp_dir = "./temp";
 bool auto_download_enabled = true;
+bool disable_ssl_check = false;
 char const *real_file=0;
 char const *color_file=0;
 enum altitude_handling_type {
@@ -477,6 +478,10 @@ void load_profile(std::string file_name)
             else if(key == "download") {
                 if(value == "yes")
                     auto_download_enabled = true;
+                else if(value == "nossl") {
+                    auto_download_enabled = true;
+                    disable_ssl_check=true;
+                }
                 else if(value == "no")
                     auto_download_enabled = false;
                 else
@@ -1468,7 +1473,7 @@ int main(int argc,char **argv)
 
         load_profile(file_name);
 
-        downloader::manager::instance().init(download_sources,temp_dir,auto_download_enabled);
+        downloader::manager::instance().init(download_sources,temp_dir,auto_download_enabled,disable_ssl_check);
        
         std::cout << "- Latitude, longitude range and scale" << std::endl;
         std::cout << std::setprecision(3) << std::fixed;
