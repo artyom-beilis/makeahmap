@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 
 # MinGW Specific
 if(WIN32)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -O2 -g -Wall -m32 -DDLL_EXPORT -Wno-deprecated-declarations")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -O2 -g -Wall -m32 -Wl,--enable-stdcall-fixup -DDLL_EXPORT -Wno-deprecated-declarations")
 	set(CMAKE_RC_FLAGS " -F pe-i386")
 	set(PLATFORM_LIBS winmm wldap32 ws2_32 urlmon)
 	set(EXTRASRC makeahmap.rc)
