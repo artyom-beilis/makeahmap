@@ -220,7 +220,7 @@ std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x
 		}
 		grsold = rsold_s;
 	}
-	
+
 	int threads = std::thread::hardware_concurrency();
 
 	std::vector<double> pAp_acc(threads);
@@ -267,13 +267,18 @@ std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x
 	int chunk = (N + threads-1)/threads;
 	int id=0;
 	auto start_ts = std::chrono::high_resolution_clock::now();
-	for(start=0;start<N;start+=chunk) {
-		int limit = std::min(start+chunk,N);
-		tasks[id] = std::move(std::thread(runner,start,limit,id));
-		id++;
+	if(grsold > 1e-5) {
+		for(start=0;start<N;start+=chunk) {
+			int limit = std::min(start+chunk,N);
+			tasks[id] = std::move(std::thread(runner,start,limit,id));
+			id++;
+		}
+		for(int i=0;i<threads;i++) {
+			tasks[i].join();
+		}
 	}
-	for(int i=0;i<threads;i++) {
-		tasks[i].join();
+	else {
+		iters = 1;
 	}
 	auto end_ts = std::chrono::high_resolution_clock::now();
 	double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end_ts-start_ts).count();

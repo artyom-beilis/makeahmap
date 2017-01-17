@@ -261,18 +261,23 @@ public:
 		int it=0;
 		float rsnew = 0;
 		auto start = std::chrono::high_resolution_clock::now();
-		for(it=0;it<limit;it++) {
-			mpl_prod_(N,Mrows,p,Ap,rd1);
-			float pAp = post_reduce(rd1,rd2,N);
-			float alpha = rsold / pAp;
-			add_vectors_(N,x,p,alpha);
-			add_vectors_and_prod_(N,r,Ap,-alpha,rd1);
-			rsnew = post_reduce(rd1,rd2,N);
-			if(rsnew < th2) 
-				break;
-			float factor = rsnew / rsold;
-			add_vectors_to_(N,p,factor,r);
-			rsold = rsnew;
+		if(rsold >= 1e-5) {
+			for(it=0;it<limit;it++) {
+				mpl_prod_(N,Mrows,p,Ap,rd1);
+				float pAp = post_reduce(rd1,rd2,N);
+				float alpha = rsold / pAp;
+				add_vectors_(N,x,p,alpha);
+				add_vectors_and_prod_(N,r,Ap,-alpha,rd1);
+				rsnew = post_reduce(rd1,rd2,N);
+				if(rsnew < th2) 
+					break;
+				float factor = rsnew / rsold;
+				add_vectors_to_(N,p,factor,r);
+				rsold = rsnew;
+			}
+		}
+		else {
+			it = 1;
 		}
 		auto end = std::chrono::high_resolution_clock::now();
 		double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end-start).count();
