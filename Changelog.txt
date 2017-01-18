@@ -1,6 +1,7 @@
-2017-01-DD: Version 1.8
+2017-01-19: Version 1.8
 
 - Fixed bug #1: No support of area around E180/W180 
+- Fixed bug #4: Implemented smoothing of the splattypes
 
 2017-01-18: Version 1.7
 
