@@ -147,6 +147,7 @@ public:
     }
     
 	bool mark_lake_river_as_river;
+    int enable_crossing;
 
 	int water_size;
 	std::vector<unsigned char> watermap;
@@ -155,6 +156,12 @@ public:
 	
 	water_generator(double flat1,double flat2,double flon1,double flon2,int water_size_in)
 	{
+        if(flon1 < -180 || flon2 < -180)
+            enable_crossing = -1;
+        else if(flon1 > 180 || flon2 > 180)
+            enable_crossing = +1;
+        else
+            enable_crossing = 0;
 
         // Note to calculations
         // since the lat1 refers to top left point and lat2 is not represented BUT
@@ -186,6 +193,8 @@ public:
 		lon_2_col = 1.0/col_2_lon;
 		row_2_lat = double(lat2 - lat1) / water_size;
 		lat_2_row = 1.0/ row_2_lat;
+
+        return_same_crossing = false;
 	}
 	~water_generator()
 	{
@@ -253,9 +262,9 @@ public:
 			// prepare index
 			int total_lines = 0;
 			std::vector<std::vector<double> > intersection_points(patch_rows);
-			
-			assert(poly.front().x == poly.back().x);
-			assert(poly.front().y == poly.back().y);
+		
+   			assert(poly.front().x == poly.back().x);
+   			assert(poly.front().y == poly.back().y);
 
 			std::list<segment> cur_segments;
 			for(int i = 0;i < points - 1;i++) {
@@ -888,8 +897,8 @@ private:
 		double x_fp = (x0 * double (y1-y0) - y0 * double(x1-x0)) / (y1 - y0);
 
 		// fit into integer range (otherwise use some infinity)
-		static const double min_range = -370e6;
-		static const double max_range =  370e6;
+		static const double min_range = -370e10;
+		static const double max_range =  370e10;
 
 		if(x_fp < min_range)
 			x_fp = min_range;
@@ -924,72 +933,81 @@ private:
     {
         f.skip(points * sizeof(point));
     }
+    bool return_same_crossing;
 	bool get()
 	{
+        int cross_offset = 360 * 1000 * 1000 * enable_crossing;
 		for(;;) {
+            // handling of area E180/W180 - render same polygon twice
+            if(return_same_crossing) {
+                for(int i=0;i<points;i++) {
+                    poly[i].x += cross_offset;
+                }
+                hdr.east += cross_offset;
+                hdr.west += cross_offset;
+                return_same_crossing = false;
+                break;
+            }
 			if(!f.read(&hdr,sizeof(hdr)))
 				return false;
+
 			hdr.endian();
 			points = hdr.n;
 			greenwich = (hdr.flag >> 16) & 1;
-            if(hdr.west > hdr.east) { // ignore polygons passing 180E - 180W
-                skip();
-				continue;
-            }
-            if(points <=2) {
-                skip();
-                continue;
-            }
-			if(hdr.north < lat1 || hdr.south > lat2) {
-                skip();
-                continue;
-            }
-            if(greenwich) {
-                if(hdr.west > lon2 || hdr.east < lon1) {
-                    skip();
-                    continue;   
-                }
-            }
-            else {
-                int west = fix_longitude_sign(hdr.west);
-                int east = fix_longitude_sign(hdr.east);
-                if(west > lon2 || east < lon1) {
-                    skip();
-                    continue;   
-                }
-            }
-
+            int dateline = (hdr.flag >> 17) & 1;
 			poly.resize(points);
+            // ignore antarctica and all polygons outside of lat range
+            if(hdr.south == -90*1000*1000 || points <= 2 || hdr.north < lat1 || hdr.south > lat2) {
+                skip();
+                continue;
+            }
+            int tmp_east = hdr.east;
+            int tmp_west = hdr.west;
+
+            // special case of Eurasia - it crosses both geenwich and dateline so no need to fix the sign of the E/W coordinates
+            if(!(greenwich && dateline)) {
+                tmp_east = fix_longitude_sign(hdr.east);
+                tmp_west = fix_longitude_sign(hdr.west);
+            }
+            // check the coordinates and their shift if needed
+            if((tmp_east < lon1 || tmp_west > lon2) && (tmp_east + cross_offset < lon1 || tmp_west + cross_offset > lon2)) {
+                skip();
+                continue;
+            }
 			if(!f.read(&poly[0],sizeof(point)*points)) {
 				throw std::runtime_error("Failed to read file - unexpected EOF");
 			}
 			for(int i=0;i<points;i++) {
 				poly[i].endian();
-			}
-    		if(greenwich) {
-				for(int i=0;i<points;i++) {
-					if(poly[i].x > hdr.east)
-						poly[i].x -= 360 * 1000 * 1000;
-				}
-			}
-            else {
-   				for(int i=0;i<points;i++) {
+
+                // very special case for eurasia its coordinates correction is different
+                if(greenwich && dateline) {
+                    if(poly[i].x > hdr.east)
+                            poly[i].x -= 360 * 1000 * 1000;
+                }
+                else if(!dateline) {
+                    // area crossing E180/W180 do not need this fix as we want coordinates to overflow 180 or -180
+                    hdr.east  = fix_longitude_sign(hdr.east);
+                    hdr.west  = fix_longitude_sign(hdr.west);
                     poly[i].x = fix_longitude_sign(poly[i].x);
-				}
-                hdr.west = fix_longitude_sign(hdr.west);
-                hdr.east = fix_longitude_sign(hdr.east);
-            }
+                }
+			}
             
-			west_col = int(floor(lon_2_col * (hdr.west - lon1)))-1;
-			east_col = int(ceil(lon_2_col * (hdr.east - lon1)))-1;
-			north_row = int(ceil(lat_2_row * (hdr.north - lat1)))+1;
-			south_row = int(floor(lat_2_row * (hdr.south - lat1)))+1;
-			rmin = range_limit(south_row,0,water_size - 1);
-			rmax = range_limit(north_row,0,water_size - 1);
-			cmin = range_limit(west_col,0,water_size - 1);
-			cmax = range_limit(east_col,0,water_size - 1);
-			return true;
+            // in case of the E180/W180 render the polygon twice
+            if(enable_crossing)
+                return_same_crossing = true;
+            break;
 		}
+
+        west_col = int(floor(lon_2_col * (hdr.west - lon1)))-1;
+        east_col = int(ceil(lon_2_col * (hdr.east - lon1)))-1;
+        north_row = int(ceil(lat_2_row * (hdr.north - lat1)))+1;
+        south_row = int(floor(lat_2_row * (hdr.south - lat1)))+1;
+        rmin = range_limit(south_row,0,water_size - 1);
+        rmax = range_limit(north_row,0,water_size - 1);
+        cmin = range_limit(west_col,0,water_size - 1);
+        cmax = range_limit(east_col,0,water_size - 1);
+        return true;
 	}
 
 	int points,greenwich;

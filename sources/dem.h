@@ -210,23 +210,30 @@ namespace dem {
             int tile_r = int(floor(real_r));
             double rw0 = 1-(real_r - tile_r);
             double rw1 = 1-rw0;
+            
+            int offset = p.cols * tiles_no;
+
             for(int c=0;c<points;c++) {
                 double real_lon = (lon2 - lon1) / points * c + lon1;
                 double real_c = lon_2_col * (real_lon + 180);
                 int tile_c = int(floor(real_c));
-                
+
                 double cw0 = 1-(real_c - tile_c);
                 double cw1 = 1-cw0;
+
                 
-                int tid0  = tile_c / p.cols;
-                int toff0 = tile_c % p.cols;
+                int tid0  = (tile_c + offset) / p.cols % tiles_no;
+                int toff0 = (tile_c + offset) % p.cols;
+
+                int tid1  = (tile_c + offset + 1) / p.cols % tiles_no;
+                int toff1 = (tile_c + offset + 1) % p.cols;
+                
                 double c0r0 = tiles[tid0]->get(real_r,  toff0);
                 double c0r1 = tiles[tid0]->get(real_r+1,toff0);
 
-                int tid1  = (tile_c+1) / p.cols;
-                int toff1 = (tile_c+1) % p.cols;
                 double c1r0 = tiles[tid1]->get(real_r,  toff1);
                 double c1r1 = tiles[tid1]->get(real_r+1,toff1);
+
 
                 double v = (c0r0 * cw0 + c1r0 * cw1) * rw0 + (c0r1 * cw0 + c1r1 * cw1) * rw1;
                 int iv = int(round(v * 3.28084));

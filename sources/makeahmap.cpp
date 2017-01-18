@@ -591,7 +591,7 @@ void load_profile(std::string file_name)
                     map_colors[3]=c;
                 else if(index=="desert")
                     map_colors[4]=c;
-                else
+        else
                     throw parsing_error("Invalid map_color[] index `" + index + "'");
             }
             else if(key == "lat1" || key == "lat2" || key=="lat") {
@@ -661,8 +661,6 @@ void load_profile(std::string file_name)
         double diff = (nmiles / 2 / 60 ) / cos(lat_c / 180 * 3.14159);
         lon1=lon_c - diff;
         lon2=lon_c + diff;
-        if(lon1 < -180 || 180 < lon2)
-            throw std::runtime_error("Configuration error: the terrain must not pass E180/W180 meridian");
         if(lat1 < -60 || 90 < lat2 )
             throw std::runtime_error("Configuration error: the latitude should be below N90 and above S60");
             
@@ -924,7 +922,16 @@ void load_globcover_data()
 
     for(int r=r0,inr=0;r<=r1;r++,inr++) {
         TIFFReadScanline(in,&buf[0],r);
-        memcpy(&bare_types[inr][0],&buf[c0],w);
+        if(0<= c0 && c1 <= width)
+            memcpy(&bare_types[inr][0],&buf[c0],w);
+        else if(c0 < 0) {
+            memcpy(&bare_types[inr][0],&buf[width + c0],-c0);
+            memcpy(&bare_types[inr][-c0],&buf[0],w + c0);
+        }
+        else { // if c1 > width
+            memcpy(&bare_types[inr][0],&buf[c0],(width - c0));
+            memcpy(&bare_types[inr][width - c0],&buf[0],c1 - width + 1);
+        }
     }
     TIFFClose(in);
 
