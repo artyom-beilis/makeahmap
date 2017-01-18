@@ -67,6 +67,7 @@ int water_alt_limit = 30000; //higher than everest
 double lake_or_island_min_size = 0.5; // sq miles
 double water_to_land_slope = 0.1; 
 int water_to_land_range = 100; // feet
+int splattype_filter_radius = 7;
 
 std::string map_name = "map";
 std::string tiff_file="./data/globcover/globcover.tif";
@@ -449,6 +450,9 @@ void load_profile(std::string file_name)
             else if(key == "cbm_size") {
                 cbm_size = atoi(value.c_str());
             }
+			else if(key == "splattype_filter_radius") {
+				splattype_filter_radius = atoi(value.c_str());
+			}
             else if(key=="type_mapping") {
                 custom_mapping = value;
             }
@@ -735,32 +739,104 @@ void recolor()
         }
     }
 }
-/*
-void low_pass_filter_splattype()
-{
-   int filter_1[] = {
-	1,   2,   1,
-	2,   4,   2,
-	1,   2,   1
-   }
-	
-	1    4    6    4    1
-    4   16   24   16    4
-    6   24   36   24    6
-    4   16   24   16    4
-    1    4    6    4    1
-	
-	 1     6    15    20    15     6     1
-     6    36    90   120    90    36     6
-    15    90   225   300   225    90    15
-    20   120   300   400   300   120    20
-    15    90   225   300   225    90    15
-     6    36    90   120    90    36     6
-     1     6    15    20    15     6     1
 
-	const int size = 3;
+std::vector<int> gconv(std::vector<int> const &in)
+{
+	std::vector<int> r(in.size() + 2,0);
+	for(unsigned i=0;i<in.size();i++) {
+		r[i+0] += in[i];
+		r[i+1] += in[i] * 2;
+		r[i+2] += in[i];
+	}
+	return r;
 }
-*/
+
+std::vector<std::vector<float> > prod(std::vector<int> const &in)
+{
+	int N=in.size();
+	std::vector<std::vector<float> > kernel(N,std::vector<float>(N));
+	int sum = 0;
+	for(int r=0;r<N;r++) {
+		for(int c=0;c<N;c++) {
+			int p=in[r]*in[c];
+			kernel[r][c]=p;
+			sum += p;
+		}
+	}
+	for(int r=0;r<N;r++) {
+		for(int c=0;c<N;c++) {
+			kernel[r][c] /= sum;
+		}
+	}
+	return kernel;
+}
+
+std::vector<std::vector<float> > get_kernel(int radius)
+{
+	std::vector<int> sec(1,1);
+	for(int i=0;i<radius;i++)
+		sec = gconv(sec);
+	return prod(sec);
+}
+
+inline void update_sums(int color,float weight,float &red_sum,float &blue_sum)
+{
+	int red  = color >> 16;
+	int blue = color & 0xFF;
+	red_sum  += weight * red;
+	blue_sum += weight * blue;
+}
+
+inline int recover_color(float red_sum,float blue_sum,int color)
+{
+	int red = int(red_sum / 16 + 0.5)*16;
+	int green = (color >> 8) & 0xFF;
+	int blue = int(blue_sum + 0.5);
+	return (red << 16) + (green << 8) + blue;
+}
+
+
+void low_pass_filter_splattype(int radius)
+{
+	if(radius <= 0)
+		return;
+	std::vector<std::vector<float> > kernel = get_kernel(radius);
+	int rows = types.size();
+	int cols = types[0].size();
+	std::vector<std::vector<int> > newtypes(rows,std::vector<int>(cols));
+	
+	for(int r=0;r<rows;r++) {
+		if(r==radius)
+			r=rows-radius;
+		for(int c=0;c<cols;c++) {
+			if(c==radius)
+				c=cols-radius;
+			float red_sum   = 0;
+			float blue_sum  = 0;
+			for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
+				for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
+					int req_r = std::min(std::max(r+dr,0),rows-1);
+					int req_c = std::min(std::max(c+dc,0),cols-1);
+					update_sums(types[req_r][req_c],kernel[kr][kc],red_sum,blue_sum);
+				}
+			}
+			newtypes[r][c] = recover_color(red_sum,blue_sum,types[r][c]);
+		}
+	}
+	for(int r=radius;r<rows-radius;r++) {
+		for(int c=radius;c<cols-radius;c++) {
+			float red_sum   = 0;
+			float blue_sum  = 0;
+			for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
+				for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
+					update_sums(types[r+dr][c+dc],kernel[kr][kc],red_sum,blue_sum);
+				}
+			}
+			newtypes[r][c] = recover_color(red_sum,blue_sum,types[r][c]);
+		}
+	}
+	newtypes.swap(types);
+}
 
 
 void write_gndtype()
@@ -1546,9 +1622,10 @@ int main(int argc,char **argv)
         gen.update_elevations(elevations,water_to_land_slope,water_to_land_range,solver_options);
         
 
-        std::cout << "- Fixing ground types according to shorelines shapes... " << std::flush;
+        std::cout << "- Fixing ground types... " << std::flush;
         write_reference_bmp();
         recolor();
+		low_pass_filter_splattype(splattype_filter_radius);
         std::cout << "Done" << std::endl;
         // */
         // make_beaches();
