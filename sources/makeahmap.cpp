@@ -43,6 +43,7 @@
 #include "dem.h"
 #include "downloader.h"
 #include "surface.h"
+#include "util.h"
 
 std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
@@ -75,6 +76,8 @@ std::string tiff_file="./data/globcover/globcover.tif";
 std::string shores = "./data/gshhs/gshhs_f.b";
 std::string rivers = "./data/gshhs/wdb_rivers_f.b";
 std::string grid_dir = "./images";
+std::string tile_set = "europe";
+std::string tile_set_path = "./resources/groundmapping";
 std::string custom_mapping;
 std::string output_dir = "./output";
 std::string download_sources = "download_sources.txt";
@@ -303,12 +306,20 @@ void prepare_map()
 void load_custom_type_mapping()
 {
     prepare_map();
-    if(custom_mapping.empty())
-        return;
-    std::cout <<"- Loading custom ground type mapping" << std::endl;
-    std::ifstream csv(custom_mapping.c_str());
+	std::string path;
+	std::string tag;
+    if(custom_mapping.empty()) {
+		path=tile_set_path + "/" + tile_set + ".csv";
+		tag = tile_set + ".csv";
+	}
+	else {
+		path = custom_mapping;
+		tag = custom_mapping;
+	}
+    std::cout <<"- Loading ground type mapping " << tag << std::endl;
+    std::ifstream csv(path.c_str());
     if(!csv) {
-        throw std::runtime_error("Failed to open file " + custom_mapping);
+        throw std::runtime_error("Failed to open file " + path);
     }
     std::string line;
     int lineno=0;
@@ -322,7 +333,7 @@ void load_custom_type_mapping()
         ss >> std::dec >> gcover >> c >> ah;
         if(!ss || c!=',' || gcover >255u || ah > 19u) {
             std::ostringstream tmp;
-            tmp << "Invalid line " << lineno << " in file " << custom_mapping;
+            tmp << "Invalid line " << lineno << " in file " << path;
             throw std::runtime_error(tmp.str());
         }
         map_type[gcover]=tile_to_color(ah);
@@ -456,6 +467,17 @@ void load_profile(std::string file_name)
 			}
             else if(key=="type_mapping") {
                 custom_mapping = value;
+            }
+            else if(key=="tile_set") {
+				auto valid = util::dir(tile_set_path,".csv");
+				if(valid.find(value + ".csv") == valid.end()) {
+					std::ostringstream ss;
+					ss << "Invalid tile set: " << value << " expected one of:";
+					for(std::string const &name : valid)
+						ss << name.substr(0,name.size()-4) << " ";
+					throw parsing_error(ss.str());
+				}
+				tile_set = value;
             }
             else if(key=="dem") {
                 if(value == "srtm3") {
