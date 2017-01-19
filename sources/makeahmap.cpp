@@ -36,6 +36,7 @@
 #include <iomanip>
 #include <limits>
 #include <string>
+#include <thread>
 #include <set>
 #include "bmp.h"
 #include "gshhs.h"
@@ -751,10 +752,10 @@ std::vector<int> gconv(std::vector<int> const &in)
 	return r;
 }
 
-std::vector<std::vector<float> > prod(std::vector<int> const &in)
+std::vector<std::vector<double> > prod(std::vector<int> const &in)
 {
 	int N=in.size();
-	std::vector<std::vector<float> > kernel(N,std::vector<float>(N));
+	std::vector<std::vector<double> > kernel(N,std::vector<double>(N));
 	int sum = 0;
 	for(int r=0;r<N;r++) {
 		for(int c=0;c<N;c++) {
@@ -771,7 +772,7 @@ std::vector<std::vector<float> > prod(std::vector<int> const &in)
 	return kernel;
 }
 
-std::vector<std::vector<float> > get_kernel(int radius)
+std::vector<std::vector<double> > get_kernel(int radius)
 {
 	std::vector<int> sec(1,1);
 	for(int i=0;i<radius;i++)
@@ -779,63 +780,94 @@ std::vector<std::vector<float> > get_kernel(int radius)
 	return prod(sec);
 }
 
-inline void update_sums(int color,float weight,float &red_sum,float &blue_sum)
+std::vector<std::vector<int> > expanded_types(int radius)
 {
-	int red  = color >> 16;
-	int blue = color & 0xFF;
-	red_sum  += weight * red;
-	blue_sum += weight * blue;
-}
-
-inline int recover_color(float red_sum,float blue_sum,int color)
-{
-	int red = int(red_sum / 16 + 0.5)*16;
-	int green = (color >> 8) & 0xFF;
-	int blue = int(blue_sum + 0.5);
-	return (red << 16) + (green << 8) + blue;
-}
-
-
-void low_pass_filter_splattype(int radius)
-{
-	if(radius <= 0)
-		return;
-	std::vector<std::vector<float> > kernel = get_kernel(radius);
 	int rows = types.size();
 	int cols = types[0].size();
-	std::vector<std::vector<int> > newtypes(rows,std::vector<int>(cols));
-	
-	for(int r=0;r<rows;r++) {
-		if(r==radius)
-			r=rows-radius;
-		for(int c=0;c<cols;c++) {
-			if(c==radius)
-				c=cols-radius;
-			float red_sum   = 0;
-			float blue_sum  = 0;
-			for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
-				for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
-					int req_r = std::min(std::max(r+dr,0),rows-1);
-					int req_c = std::min(std::max(c+dc,0),cols-1);
-					update_sums(types[req_r][req_c],kernel[kr][kc],red_sum,blue_sum);
-				}
-			}
-			newtypes[r][c] = recover_color(red_sum,blue_sum,types[r][c]);
-		}
-	}
-	for(int r=radius;r<rows-radius;r++) {
-		for(int c=radius;c<cols-radius;c++) {
-			float red_sum   = 0;
-			float blue_sum  = 0;
-			for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
-				for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
-					update_sums(types[r+dr][c+dc],kernel[kr][kc],red_sum,blue_sum);
-				}
-			}
-			newtypes[r][c] = recover_color(red_sum,blue_sum,types[r][c]);
-		}
-	}
-	newtypes.swap(types);
+	std::vector<std::vector<int> > safetypes(rows + radius*2,std::vector<int>(cols+radius*2));
+    for(int r=0;r<rows;r++) {
+        for(int c=0;c<cols;c++) {
+            safetypes[r+radius][c+radius]=types[r][c];
+        }
+    }
+    for(int r=0;r<rows;r++) {
+        for(int dc=0;dc<radius;dc++) {
+            safetypes[r+radius][dc]=types[r][0];
+            safetypes[r+radius][radius + cols + dc]=types[r].back();
+        }
+    }
+    for(int dr=0;dr<radius;dr++) {
+        for(int c=0;c<cols+radius*2;c++) {
+            safetypes[dr][c]=safetypes[radius][c];
+            safetypes[radius + rows + dr][c]=safetypes[rows + radius - 1][c];
+        }
+    }
+    return safetypes;
+}
+
+double low_pass_filter_splattype(int radius)
+{
+	if(radius <= 0)
+		return 0;
+	auto start_ts = std::chrono::high_resolution_clock::now();
+
+	int rows = types.size();
+	int cols = types[0].size();
+
+	std::vector<std::vector<double> > kernel = get_kernel(radius);
+    std::vector<std::vector<int> > safetypes = expanded_types(radius);
+
+    auto runner = [&](int from,int to) {	
+        for(int r=from;r<to;r++) {
+            for(int c=0;c<cols;c++) {
+                int ref_r = r+radius;
+                int ref_c = c+radius;
+                int *sr[3] = {
+                    &safetypes[ref_r-1][ref_c-1],
+                    &safetypes[ref_r][ref_c-1],
+                    &safetypes[ref_r+1][ref_c-1]
+                };
+                int blue =      (sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
+                            + 2*(sr[1][0] & 0x1) + 4*(sr[1][1] & 0x1) + 2*(sr[1][2] & 0x1)
+                            +   (sr[2][0] & 0x1) + 2*(sr[2][1] & 0x1) +   (sr[2][2] & 0x1);
+                blue = (blue * 255 + 8)/ 16;
+                if(blue == 255)
+                    continue;
+
+                double red_sum    = 0;
+                double red_weight = 0;
+                for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
+                    for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
+                        int type = safetypes[ref_r+dr][ref_c+dc];
+                        int red_type = type >> (16 + 4);
+                        double weight = kernel[kr][kc];
+                        int sum_factor  = (type & 1)  ^ 1; // blue == 0 for blue one of 0xFF or 0
+                        red_sum    += red_type * weight * sum_factor;
+                        red_weight += weight * sum_factor;
+                    }
+                }
+                
+                int red = int(red_sum / red_weight + 0.5)*16;
+                int green = (safetypes[ref_r][ref_c] >> 8) & 0xFF;
+                types[r][c] = (red << 16) + (green << 8) + blue;
+            }
+        }
+    }; // runner
+
+    // split for multiple threads
+	int threads = std::thread::hardware_concurrency();
+	std::vector<std::thread> tasks(threads);
+	int chunk = (rows + threads-1)/threads;
+    for(int start=0,id=0;start<rows;start+=chunk,id++) {
+        int limit = std::min(start + chunk,rows);
+        tasks[id]=std::move(std::thread(runner,start,limit));
+    }
+    for(int i=0;i<threads;i++) {
+        tasks[i].join();
+    }
+	auto end_ts = std::chrono::high_resolution_clock::now();
+	double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end_ts-start_ts).count();
+    return time;
 }
 
 
@@ -1625,8 +1657,8 @@ int main(int argc,char **argv)
         std::cout << "- Fixing ground types... " << std::flush;
         write_reference_bmp();
         recolor();
-		low_pass_filter_splattype(splattype_filter_radius);
-        std::cout << "Done" << std::endl;
+		double time = low_pass_filter_splattype(splattype_filter_radius);
+        std::cout << "Done in " << time << " s" << std::endl;
         // */
         // make_beaches();
         

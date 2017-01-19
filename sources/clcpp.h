@@ -265,7 +265,7 @@ struct local_proxy {
 	size_t size;
 };
 
-local_proxy local_memory(size_t len)
+inline local_proxy local_memory(size_t len)
 {
 	local_proxy lp={len};
 	return lp;
@@ -356,6 +356,12 @@ public:
 		reset();
 		bind_all(items,args...);
 		enqueue(items);
+	}
+	void enqueue(size_t d1,size_t d2) {
+		size_t sizes[]={d1,d2};
+		int err = clEnqueueNDRangeKernel(ctx_.queue(),kernel_, 2, NULL, sizes, 0 , 0, NULL, 0);
+		if(err!=CL_SUCCESS)
+			throw cl_error("Failed to enqueue kernel",err);
 	}
 	void enqueue(size_t global_items)
 	{
