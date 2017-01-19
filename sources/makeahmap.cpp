@@ -811,11 +811,12 @@ double low_pass_filter_splattype(int radius)
 		return 0;
 	auto start_ts = std::chrono::high_resolution_clock::now();
 
-	int rows = types.size();
-	int cols = types[0].size();
 
 	std::vector<std::vector<double> > kernel = get_kernel(radius);
     std::vector<std::vector<int> > safetypes = expanded_types(radius);
+
+	int rows = types.size();
+	int cols = types[0].size();
 
     auto runner = [&](int from,int to) {	
         for(int r=from;r<to;r++) {
@@ -862,10 +863,12 @@ double low_pass_filter_splattype(int radius)
         int limit = std::min(start + chunk,rows);
         tasks[id]=std::move(std::thread(runner,start,limit));
     }
+
     for(int i=0;i<threads;i++) {
         tasks[i].join();
     }
-	auto end_ts = std::chrono::high_resolution_clock::now();
+	
+    auto end_ts = std::chrono::high_resolution_clock::now();
 	double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end_ts-start_ts).count();
     return time;
 }

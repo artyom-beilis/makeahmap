@@ -7,7 +7,7 @@ void low_pass_filter(int radius,std::vector<std::vector<double> > const &ckernel
 	int cols = types[0].size();
 	char const *ocl_kernel_code = 
 	R"xxx(
-	    __kernel void convolve_color(int rows,int cols,int radius,__global int const *safetypes,__global int *types,__global float const *kernel)
+	    __kernel void convolve_color(int rows,int cols,int radius,__global int const *safetypes,__global int *types,__global float const *ckernel)
 	    {
 		int r=get_global_id(0);
 		int c=get_global_id(1);
@@ -34,13 +34,13 @@ void low_pass_filter(int radius,std::vector<std::vector<double> > const &ckernel
                 	for(int kc=0;kc<=ks;kc++) {
 	                        int type = safetypes[(r+kr)*safe_cols+c+kc];
 				int red_type = type >> (16 + 4);
-				float weight = kernel[kr * ks + kc];
+				float weight = ckernel[kr * ks + kc];
 				int sum_factor  = (type & 1)  ^ 1; // blue == 0 for blue one of 0xFF or 0
 				red_sum    += red_type * weight * sum_factor;
 				red_weight += weight * sum_factor;
 			}
                 }
-                int red = int(red_sum / red_weight + 0.5)*16;
+                int red = (int)(red_sum / red_weight + 0.5)*16;
                 int green = (safetypes[ref_r * safe_cols + ref_c] >> 8) & 0xFF;
                 types[r*cols + c] = (red << 16) + (green << 8) + blue;
             }
@@ -62,6 +62,7 @@ void low_pass_filter(int radius,std::vector<std::vector<double> > const &ckernel
 			local_kernel[pos++]=ckernel[r][c];
 		
 	std::vector<int> local_types(rows*cols);
+	auto start_ts = std::chrono::high_resolution_clock::now();
 	memory_object<float> ocl_kernel(ctx,&local_kernel[0],local_kernel.size(),CL_MEM_READ_ONLY);
 	memory_object<int> ocl_safetypes(ctx,&local_safetypes[0],local_safetypes.size(),CL_MEM_READ_ONLY);
 	memory_object<int> ocl_types(ctx,rows*cols);
@@ -69,6 +70,9 @@ void low_pass_filter(int radius,std::vector<std::vector<double> > const &ckernel
 	filter.bind_all(rows,cols,radius,ocl_safetypes,ocl_types,ocl_kernel);
 	filter.enqueue(rows,cols);
 	ocl_types.copy_to_host(&local_types[0],local_types.size());
+	auto end_ts = std::chrono::high_resolution_clock::now();
+	double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end_ts-start_ts).count();
+	std::cerr << "\n\nTime = " << time << "\n";
 	for(int r=0;r<rows;r++)
 		memcpy(&types[r][0],&local_types[r*cols],sizeof(int)*(cols));
 }
