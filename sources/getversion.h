@@ -10,6 +10,7 @@
 
 #define BASE_URL std::string("http://cppcms.com/files/makeahmap/")
 
+
 struct makeahmap_version;
 inline std::ostream &operator<<(std::ostream &out,makeahmap_version const &v);
 

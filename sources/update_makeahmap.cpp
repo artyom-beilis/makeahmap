@@ -15,7 +15,7 @@ void checker()
 	std::cout << "Current Version : " << current << std::endl;
 	makeahmap_version latest = get_latest_version();
 	std::cout << "Latest Version  : " << latest << std::endl;
-	if(current == latest) {
+	if(!(latest < current)) {
 		std::cout << "The version is up to date" << std::endl;
 		return;
 	}
