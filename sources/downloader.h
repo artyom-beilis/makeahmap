@@ -55,7 +55,6 @@ namespace downloader {
         bool enabled_;
         bool disable_ssl_check_;
     };
-
 } // namespce
 
 // vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4

@@ -42,21 +42,30 @@ if(OCL_INC AND OCL)
 	add_executable(makeahmap
 		makeahmap.cpp
 		downloader.cpp
+		url.cpp
 		surface.cpp
 		${EXTRASRC}
 		)
+
 	set_target_properties(makeahmap PROPERTIES COMPILE_FLAGS "-DENABLE_OCL")
 	target_link_libraries(makeahmap ${STDLIBS} ${OCL} ${PLATFORM_LIBS})
 
 	add_executable(gpumemtest gpumemtest.cpp)
 	target_link_libraries(gpumemtest ${OCL})
+	
 
 endif()
 
 add_executable(makeahmap_cpu
 		makeahmap.cpp
 		downloader.cpp
+		url.cpp
 		surface.cpp
 		${EXTRASRC})
 
 target_link_libraries(makeahmap_cpu ${STDLIBS} ${PLATFORM_LIBS})
+
+add_executable(update_makeahmap update_makeahmap.cpp url.cpp)
+if(NOT WIN32)
+	target_link_libraries(update_makeahmap ${CURL})
+endif()

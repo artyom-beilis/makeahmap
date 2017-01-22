@@ -1,5 +1,6 @@
 #pragma once
-#include "clcpp.h"
+#define __CL_ENABLE_EXCEPTIONS
+#include <CL/cl.hpp>
 
 void low_pass_filter(int radius,std::vector<std::vector<double> > const &ckernel,std::vector<std::vector<int> > const &safetypes,std::vector<std::vector<int> > &types)
 {
@@ -46,6 +47,15 @@ void low_pass_filter(int radius,std::vector<std::vector<double> > const &ckernel
             }
 	)xxx";
 
+	cl::Context context(CL_DEVICE_TYPE_ALL);
+	cl::Program prog(context,ocl_kernel_code);
+	prog.build();
+
+	// int rows,int cols,int radius,__global int const *safetypes,__global int *types,__global float const *ckernel
+	auto filter = cl::make_kernel<int,int,cl::Buffer,cl::Buffer,cl::Buffer>(prog,"convolve_color");
+
+	cl::CommandQueue queue(context);
+	
 
 	context_with_program ctx;
 	std::cerr << " Using " << ctx.name() << std::endl;
@@ -63,6 +73,10 @@ void low_pass_filter(int radius,std::vector<std::vector<double> > const &ckernel
 		
 	std::vector<int> local_types(rows*cols);
 	auto start_ts = std::chrono::high_resolution_clock::now();
+
+	cl::Buffer ocl_kernel(context,local_kernel.begin(),local_kernel.end(),CL_MEM_READ_ONLY);
+	cl::Buffer ocl_safetypes(context,local_safetypes.begin(),local_safetypes.end(),CL_MEM_READ_ONLY);
+	cl::Buffer
 	memory_object<float> ocl_kernel(ctx,&local_kernel[0],local_kernel.size(),CL_MEM_READ_ONLY);
 	memory_object<int> ocl_safetypes(ctx,&local_safetypes[0],local_safetypes.size(),CL_MEM_READ_ONLY);
 	memory_object<int> ocl_types(ctx,rows*cols);
