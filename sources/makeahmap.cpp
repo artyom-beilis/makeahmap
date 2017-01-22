@@ -44,6 +44,7 @@
 #include "downloader.h"
 #include "surface.h"
 #include "util.h"
+#include "getversion.h"
 
 std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
@@ -70,6 +71,7 @@ double lake_or_island_min_size = 0.5; // sq miles
 double water_to_land_slope = 0.1; 
 int water_to_land_range = 100; // feet
 int splattype_filter_radius = 7;
+int check_updates=1;
 
 std::string map_name = "map";
 std::string tiff_file="./data/globcover/globcover.tif";
@@ -500,6 +502,9 @@ void load_profile(std::string file_name)
             else if(key == "map_name") {
                 map_name = value;
             }
+			else if(key == "check_updates") {
+				check_updates = atoi(value.c_str());
+			}
             else if(key == "shores") {
                 shores = value;
             }
@@ -1634,6 +1639,39 @@ void pass_one()
 }
 */
 
+void test_up_to_date(int check_updates)
+{
+	if(check_updates < 0)
+		return;
+	time_t last_test = 0;
+	{
+		std::ifstream f("./data/last_update.txt");
+		if(f) {
+			f >> last_test;
+			if(f && (time(0) - last_test < check_updates * 3600 * 24))
+				return;
+		}
+	}
+	std::cout << "- Checking for makeahmap updates... " << std::flush;
+	try {
+		makeahmap_version current = get_current_version();
+		makeahmap_version latest = get_latest_version();
+		if(current == latest) {
+			std::cout << current << " is up to date " << std::endl;
+		}
+		else {
+			std::cout << "  Newer Version Avalible " << latest << " !!!"<< std::endl;
+			std::cout << "  >>>> Please use update_makeahmap.exe  to update to latest version <<<<" << std::endl;
+		}
+	}
+	catch(std::exception const &e) {
+		std::cout << " failed to get latest version number" << std::endl;
+	}
+	std::ofstream f("./data/last_update.txt");
+	f << time(0);
+		
+}
+
 int main(int argc,char **argv)
 {
     try {
@@ -1646,6 +1684,8 @@ int main(int argc,char **argv)
             throw std::runtime_error("Usage makeahmap [ /path/to/config.ini ]");
 
         load_profile(file_name);
+		
+		test_up_to_date(check_updates);
 
         downloader::manager::instance().init(download_sources,temp_dir,auto_download_enabled,disable_ssl_check);
        
