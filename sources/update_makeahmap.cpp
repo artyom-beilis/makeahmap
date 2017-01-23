@@ -1,7 +1,18 @@
 #include "getversion.h"
 #include <assert.h>
 #include <stdio.h>
-#include <io.h>
+#if defined(WIN32)  || defined(_WIN32)
+# include <io.h>
+#  ifndef access
+#   define access(x,y) _access(x,y)
+# endif
+# ifndef F_OK
+#  define F_OK 0
+# endif
+#else
+# include <unistd.h>
+#endif
+
 
 void restore()
 {
@@ -31,7 +42,7 @@ void checker()
 	remove(".\\temp\\update_save.exe");
 	if(rename("update_makeahmap.exe",".\\temp\\update_save.exe")!=0)
 		throw std::runtime_error("Failed to move update_makeahmap.exe");
-	if(_access((dir + "\\update_script.bat").c_str(),00)==0) {
+	if(access((dir + "\\update_script.bat").c_str(),F_OK)==0) {
 		if(system((dir + "\\update_script.bat").c_str())!=0) {
 			restore();
 			throw std::runtime_error(dir + "\\update_script.bat returned with error!");

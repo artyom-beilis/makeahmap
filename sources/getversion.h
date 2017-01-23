@@ -8,6 +8,13 @@
 #include <sstream>
 #include "url.h"
 
+#ifdef major
+#undef major
+#endif
+#ifdef minor
+#undef minor
+#endif
+
 #define BASE_URL std::string("http://cppcms.com/files/makeahmap/")
 
 
