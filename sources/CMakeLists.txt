@@ -7,7 +7,7 @@ if(WIN32)
 	set(PLATFORM_LIBS winmm wldap32 ws2_32 urlmon)
 	set(EXTRASRC makeahmap.rc)
 else()
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O2 -g -Wall -Wno-deprecated-declarations -pthread -fopenmp")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O3 -g -Wall -Wno-deprecated-declarations -pthread -fopenmp")
 	set(PLATFORM_LIBS pthread)
 endif()
 
