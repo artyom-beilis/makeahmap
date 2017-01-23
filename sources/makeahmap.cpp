@@ -45,6 +45,7 @@
 #include "surface.h"
 #include "util.h"
 #include "getversion.h"
+#include "font.h"
 
 std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
@@ -712,8 +713,6 @@ void load_profile(std::string file_name)
     rv_prop.lon_shift = miles_to_lon * river_east_shift;
     
 }
-
-
 
 
 void resample_type()
@@ -1656,13 +1655,17 @@ void test_up_to_date(int check_updates)
 	try {
 		makeahmap_version current = get_current_version();
 		makeahmap_version latest = get_latest_version();
-		if(current == latest) {
-			std::cout << current << " is up to date " << std::endl;
-		}
-		else {
+		if(current < latest) {
 			std::cout << "  Newer Version Avalible " << latest << " !!!"<< std::endl;
-			std::cout << "  >>>> Please use update_makeahmap.exe  to update to latest version <<<<" << std::endl;
+            std::cout << "  ======================================================================" << std::endl;
+            std::cout << "  ==                                                                  ==" << std::endl;
+			std::cout << "  >>   Please use update_makeahmap.exe  to update to latest version   <<" << std::endl;
+            std::cout << "  ==                                                                  ==" << std::endl;
+            std::cout << "  ======================================================================" << std::endl;
 		}
+        else {
+			std::cout << current << " is up to date " << std::endl;
+        }
 	}
 	catch(std::exception const &e) {
 		std::cout << " failed to get latest version number" << std::endl;
@@ -1672,16 +1675,120 @@ void test_up_to_date(int check_updates)
 		
 }
 
+struct cluster_data {
+    int size;
+    int row;
+    int col;
+    bool operator<(cluster_data const &other) const
+    {
+        return size < other.size;
+    }
+};
+
+cluster_data find_cluster(std::vector<std::vector<int> > &img,int r,int c)
+{
+    int rows = img.size();
+    int cols = img[0].size();
+    double rs=0;
+    double cs=0;
+    cluster_data d=cluster_data();
+    d.size = 1;
+    rs+=r;
+    cs+=c;
+
+    std::queue<std::pair<int,int> > q;
+    q.push(std::make_pair(r,c));
+    static const int marked = 128;
+    img[r][c]=marked;
+    while(!q.empty()) {
+        auto p=q.front();
+        q.pop();
+        for(int dr=-1;dr<=1;dr++) {
+            for(int dc=-1;dc<=1;dc++) {
+                int new_r=p.first+dr;
+                int new_c=p.second+dc;
+                if(new_r < 0 || new_c < 0 || new_r>=rows || new_c >= cols || img[new_r][new_c]==marked || img[new_r][new_c]==0)
+                    continue;
+                q.push(std::make_pair(new_r,new_c));
+                rs+=new_r;
+                cs+=new_c;
+                d.size++;
+                img[new_r][new_c]=marked;
+            }
+        }
+    }
+    d.row = rs / d.size;
+    d.col = cs / d.size;
+    return d;
+}
+
+void mark_clusters()
+{
+    std::priority_queue<cluster_data> clusters;
+    int rows = types.size();
+    int cols = types[0].size();
+    for(int r=0;r<rows;r++) {
+        for(int c=0;c<cols;c++) {
+            if(types[r][c]==1) {
+                cluster_data d=find_cluster(types,r,c);
+                clusters.push(d);
+            }
+        }
+    }
+    int total = 10;
+    while(!clusters.empty() && total > 0) {
+        cluster_data d= clusters.top();
+        clusters.pop();
+        double lat = (lat2 - lat1) / rows * (rows - d.row) + lat1;
+        double lon = (lon2 - lon1) / cols * d.col + lon1;
+        char buf[256];
+        snprintf(buf,sizeof(buf),"%3.3f,%3.3f",lat,lon);
+        if(d.row > 0 && d.row < rows-1 && d.col > 0 && d.col < cols - 1) {
+            types[d.row][d.col-1]=255;
+            types[d.row][d.col]=255;
+            types[d.row][d.col+1]=255;
+            types[d.row-1][d.col]=255;
+            types[d.row+1][d.col]=255;
+        }
+
+        print_str(buf,d.row,d.col,255,types);
+        snprintf(buf,sizeof(buf),"%10.6f%% %9.3f,%9.3f",d.size*100.0 / rows / cols,lat,lon);
+        std::cout << buf << std::endl;
+        total --;
+    }
+}
+
+void mark_type_and_save(int type)
+{
+    int rows = types.size();
+    int cols = types[0].size();
+    for(int r=0;r<rows;r++)
+        for(int c=0;c<cols;c++)
+            if(types[r][c]==type)
+                types[r][c]=1;
+            else
+                types[r][c]=0;
+    mark_clusters();
+    write_reference_bmp();
+}
+
 int main(int argc,char **argv)
 {
     try {
-        std::string file_name;
-        if(argc == 1)
-            file_name = "config.ini";
-        else if(argc == 2)  
-            file_name = argv[1];
-        else
+        int save_globcover_type = -1;
+        std::string file_name = "config.ini";
+
+        if(argc > 2)
             throw std::runtime_error("Usage makeahmap [ /path/to/config.ini ]");
+        else if(argc == 2) {
+            std::string param=argv[1];
+            if(param.find("--type=")==0) {
+                save_globcover_type = atoi(param.c_str() + 7);
+            }
+            else {
+                file_name == param;
+            }
+        }
 
         load_profile(file_name);
 		
@@ -1700,6 +1807,11 @@ int main(int argc,char **argv)
         std::cout << "- Loading GlobCover Data. " << std::endl;
         load_globcover_data();
         resample_type();
+
+        if(save_globcover_type != -1) {
+            mark_type_and_save(save_globcover_type);
+            return 0;
+        }
  
         std::cout << "- Loading Digital Elevations Model data. " << std::endl;
         std::vector<std::vector<int16_t> > tmp=dem::read(db_type,map_size*8,lat1,lat2,lon1,lon2);
