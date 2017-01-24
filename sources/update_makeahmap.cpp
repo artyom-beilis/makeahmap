@@ -26,7 +26,7 @@ void checker()
 	std::cout << "Current Version : " << current << std::endl;
 	makeahmap_version latest = get_latest_version();
 	std::cout << "Latest Version  : " << latest << std::endl;
-	if(!(latest < current)) {
+	if(current == latest || current > latest) {
 		std::cout << "The version is up to date" << std::endl;
 		return;
 	}
@@ -59,8 +59,10 @@ void checker()
 		system("del /S /Q .\\temp\\makeahmap-*.zip .\\temp\\makeahmap-*");
 	}
 	current = get_current_version();
-	if(current==latest)
+	if(current==latest) {
 		std::cout << "Upgraded sucessefully to " << latest << std::endl;
+		system("start notepad.exe Changelog.txt");
+	}
 	else
 		throw std::runtime_error("Failed to upgrade to " + latest.str() + " current version is " + current.str());
 }

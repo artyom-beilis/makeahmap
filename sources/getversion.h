@@ -50,9 +50,13 @@ struct makeahmap_version {
 		else
 			throw std::runtime_error("Failed to parse version " + v);
 	}
+	bool operator!=(makeahmap_version const &other) const
+	{
+		return !(*this==other);
+	}
 	bool operator==(makeahmap_version const &other) const
 	{
-		return !(*this<other) && !(other < *this);
+		return major==other.major && minor == other.minor && revision == other.revision && suffix == other.suffix;
 	}
 	bool operator<(makeahmap_version const &other) const
 	{
@@ -63,6 +67,16 @@ struct makeahmap_version {
 		if(revision != other.revision)
 			return revision < other.revision;
 		return suffix < other.suffix;
+	}
+	bool operator>(makeahmap_version const &other) const
+	{
+		if(major != other.major)
+			return major > other.major;
+		if(minor != other.minor)
+			return minor > other.minor;
+		if(revision != other.revision)
+			return revision > other.revision;
+		return suffix > other.suffix;
 	}
 };
 
