@@ -1,7 +1,8 @@
-2017-01-23: Version 1.9
+2017-01-25: Version 1.9
 
-- Added 3 types of ground mapping european, pacific and mediterranean for different tile sets
-- Implemented auto updater.
+- Added 3 types of ground mapping european, pacific and mediterranean optimized different tile sets
+  they can be selected using tile_set option in config.ini
+- Implemented automatic updates checks and updater software.
 - Fixed bug #4: Now really the smoothing is much more accurate and peasing
 
 2017-01-19: Version 1.8
