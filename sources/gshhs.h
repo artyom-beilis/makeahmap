@@ -301,11 +301,6 @@ public:
 				}
 			}
 			for(int i=0;i<patch_rows;i++) {
-				if(intersection_points[i].size() % 2 != 0) {
-					printf("Row case = %d size=%d\n",i+rmin,int(intersection_points[i].size()));
-					for(unsigned j=0;j<intersection_points[i].size();j++)
-						printf("   x=%f\n",intersection_points[i][j]);
-				}
 				assert(intersection_points[i].size() % 2 == 0);
 				std::sort(intersection_points[i].begin(),intersection_points[i].end());
 			}

@@ -1,98 +1,77 @@
 #include "surface.h"
 #include "solver.h"
-
-#ifdef ENABLE_OCL
-#include "solver_ocl.h"
-#endif
-
+#include "surface_solver.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
 #include <thread>
 
+#if defined _WIN32 || defined WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#include <libgen.h>
+#include <unistd.h>
+#endif
 
-template<typename Solver>
-class surface_solver : public surface_solver_base {
-public:
-	surface_solver() {}
-	virtual ~surface_solver() {}
-	virtual std::string name()
-	{
-		return slv.name();
-	}
-	stats run(std::vector<std::vector<char> > const &bmask,std::vector<std::vector<float> > &bvalues,float thresh)
-	{
-		int N=bmask.size();
-		std::vector<std::pair<int,int> > index;
-		std::vector<std::vector<int> > rindex(N,std::vector<int>(N,0));
-		index.reserve(N*N);
-		int variables = 0;
-		for(int i=0;i<N;i++) {
-			for(int j=0;j<N;j++) {
-				if(!bmask[i][j]) {
-					index.push_back(std::make_pair(i,j));
-					rindex[i][j]=variables;
-					variables++;
-				}
-				else
-					rindex[i][j]=-1;
-			}
-		}
+extern "C" {
+	typedef surface_solver_base *(*get_gpu_solver_type)(char *,size_t);
+}
+
+std::unique_ptr<surface_solver_base> load_gpu_solver()
+{
+	get_gpu_solver_type get_gpu_solver = nullptr;
+
+#if defined _WIN32 || defined WIN32
+	UINT oldMode = SetErrorMode(0);
+	SetErrorMode(oldMode | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
+	HMODULE h = LoadLibrary("libmakeahmap_gpu.dll");
+	SetErrorMode(oldMode);
+	if(!h)
+		throw std::runtime_error("Failed to load libmakeahmap_gpu.dll");
+	FARPROC sym = GetProcAddress(h,"get_gpu_solver");
+	if(!sym)
+		throw std::runtime_error("Failed to resolve get_gpu_solver");
+#else
+	char path[4096]={};
+	int size = readlink("/proc/self/exe",path,sizeof(path)-256);
+	if(size < 0)
+		std::runtime_error("Failed to read /proc/self/exe");
+	char *p=dirname(path);
+	strcat(p,"/libmakeahmap_gpu.so");
 		
-		int align_factor = 4 * std::thread::hardware_concurrency();
-		int variables_aligned = (variables + align_factor - 1) / align_factor * align_factor;
-
-		slv.init_matrix(variables_aligned);
-		std::vector<float> y(variables_aligned,0);
-		std::vector<float> x0(variables_aligned,0);
-
-		for(int i=0;i<variables;i++) {
-			int r=index[i].first;
-			int c=index[i].second;
-			x0[i]=bvalues[r][c];
-			int drs[4]={0,0,-1,+1};
-			int dcs[4]={1,-1,0,0};
-			for(int p=0;p<4;p++) {
-				int r2=r+drs[p];
-				int c2=c+dcs[p];
-				if(bmask[r2][c2])
-					y[i]+= bvalues[r2][c2] * 0.25;
-				else 
-					slv.add(i,rindex[r2][c2]);
-			}
-		}
-
-		auto start = std::chrono::high_resolution_clock::now();
-		std::pair<int,double> st = slv.solve(y.data(),x0.data(),thresh,variables_aligned);
-		auto end = std::chrono::high_resolution_clock::now();
-
-		double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end-start).count();
-
-		for(int i=0;i<variables;i++) {
-			bvalues[index[i].first][index[i].second]=x0[i];
-		}
-
-		stats res;
-		res.iterations = st.first;
-		res.bandwidth = double(slv.get_bytes_per_it()) * res.iterations * variables /  st.second / (1024*1024*1024);
-		res.time = time;
-		return res;
+	void *h = dlopen(p,RTLD_LAZY | RTLD_GLOBAL);
+	if(!h) {
+		throw std::runtime_error("Failed to load " + std::string(p));
 	}
-	Solver slv;
-};
+	void *sym = dlsym(h,"get_gpu_solver");
+	if(!sym) {
+		throw std::runtime_error("Failed to resolve get_gpu_solver");
+	}
+#endif	
+	get_gpu_solver = reinterpret_cast<get_gpu_solver_type>(sym);
+
+	char buf[4096]="Unknown";
+	std::unique_ptr<surface_solver_base> r(get_gpu_solver(buf,sizeof(buf)));
+	if(!r.get()) {
+		throw std::runtime_error(buf);
+	}
+	return std::move(r);
+}
+
 
 std::unique_ptr<surface_solver_base> get_solver(surface_solver_options const &opt)
 {
 	std::unique_ptr<surface_solver_base> ptr;
-#ifdef ENABLE_OCL
+	
 	if(!opt.force_cpu) {
 		try {
-			std::unique_ptr<surface_solver<gpu::eq_solver> > rptr (new surface_solver<gpu::eq_solver>());
-			if(!rptr->slv.is_cpu())
-				return std::move(rptr);
+			ptr = std::move(load_gpu_solver());
+			if(!(ptr->is_cpu())) 
+				return std::move(ptr);
 			if(opt.allow_cpu) {
 				std::cout <<"   WARNING: Only CPU OpenCL support avalible (suboptimal), using it as per user request " << std::endl;
-				return std::move(rptr);
+				return std::move(ptr);
 			}
 			std::cout <<"   NOTE: No GPU OpenCL support avalible, falling back to CPU" << std::endl;
 		}
@@ -100,7 +79,7 @@ std::unique_ptr<surface_solver_base> get_solver(surface_solver_options const &op
 			std::cout <<"   WARMING: Failed to create OpenCL solver, falling back to CPU: " << e.what() << std::endl;
 		}
 	}
-#endif
+	
 	ptr.reset(new surface_solver<cpu::eq_solver>());
 	return std::move(ptr);
 

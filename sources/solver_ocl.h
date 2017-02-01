@@ -55,6 +55,7 @@ public:
 			typedef struct row {
 				short4 c;
 			} row;
+
 			__kernel void matrix_mpl(
 				int n,
 				__global const row *rows,

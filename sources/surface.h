@@ -28,6 +28,7 @@ public:
 		double time;
 	};
 	
+	virtual bool is_cpu() = 0;
 	virtual std::string name() = 0;
 	virtual stats run(std::vector<std::vector<char> > const &bmask,std::vector<std::vector<float> > &bvalues,float thresh) = 0;
 	surface_solver_base() {}

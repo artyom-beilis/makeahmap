@@ -8,7 +8,7 @@ if(WIN32)
 	set(EXTRASRC makeahmap.rc)
 else()
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_SIMD -std=c++11 -O3 -g -Wall -Wno-deprecated-declarations -pthread")
-	set(PLATFORM_LIBS pthread)
+	set(PLATFORM_LIBS pthread dl)
 endif()
 
 # Libraries
@@ -36,19 +36,20 @@ if(NOT WIN32)
 	set(STDLIBS ${STDLIBS} ${CURL})
 endif()
 
-if(OCL_INC AND OCL)
-	include_directories("${OCL_INC}")
-	
-	add_executable(makeahmap
+add_executable(makeahmap
 		makeahmap.cpp
 		downloader.cpp
 		url.cpp
 		surface.cpp
-		${EXTRASRC}
-		)
+		${EXTRASRC})
 
-	set_target_properties(makeahmap PROPERTIES COMPILE_FLAGS "-DENABLE_OCL")
-	target_link_libraries(makeahmap ${STDLIBS} ${OCL} ${PLATFORM_LIBS})
+
+if(OCL_INC AND OCL)
+	include_directories("${OCL_INC}")
+	
+	add_library(makeahmap_gpu SHARED gpu_solver.cpp)
+
+	target_link_libraries(makeahmap_gpu ${OCL})
 
 	add_executable(gpumemtest gpumemtest.cpp)
 	target_link_libraries(gpumemtest ${OCL})
@@ -56,14 +57,7 @@ if(OCL_INC AND OCL)
 
 endif()
 
-add_executable(makeahmap_cpu
-		makeahmap.cpp
-		downloader.cpp
-		url.cpp
-		surface.cpp
-		${EXTRASRC})
-
-target_link_libraries(makeahmap_cpu ${STDLIBS} ${PLATFORM_LIBS})
+target_link_libraries(makeahmap ${STDLIBS} ${PLATFORM_LIBS})
 
 add_executable(update_makeahmap update_makeahmap.cpp url.cpp)
 if(NOT WIN32)
