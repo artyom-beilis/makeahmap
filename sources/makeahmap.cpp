@@ -778,27 +778,29 @@ std::vector<int> gconv(std::vector<int> const &in)
 	return r;
 }
 
-std::vector<std::vector<double> > prod(std::vector<int> const &in)
+std::vector<float> prod(std::vector<int> const &in)
 {
 	int N=in.size();
-	std::vector<std::vector<double> > kernel(N,std::vector<double>(N));
+	std::vector<float> kernel(N*N);
 	int sum = 0;
+    int pos = 0;
 	for(int r=0;r<N;r++) {
 		for(int c=0;c<N;c++) {
 			int p=in[r]*in[c];
-			kernel[r][c]=p;
+            kernel[pos++] = p;
 			sum += p;
 		}
 	}
+    pos = 0;
 	for(int r=0;r<N;r++) {
 		for(int c=0;c<N;c++) {
-			kernel[r][c] /= sum;
+			kernel[pos++] /= sum;
 		}
 	}
 	return kernel;
 }
 
-std::vector<std::vector<double> > get_kernel(int radius)
+std::vector<float> get_kernel(int radius)
 {
 	std::vector<int> sec(1,1);
 	for(int i=0;i<radius;i++)
@@ -831,55 +833,113 @@ std::vector<std::vector<int> > expanded_types(int radius)
     return safetypes;
 }
 
-double low_pass_filter_splattype(int radius)
+float low_pass_filter_splattype(int radius)
 {
 	if(radius <= 0)
 		return 0;
 	auto start_ts = std::chrono::high_resolution_clock::now();
 
 
-	std::vector<std::vector<double> > kernel = get_kernel(radius);
-    std::vector<std::vector<int> > safetypes = expanded_types(radius);
+	std::vector<float> kernel = get_kernel(radius);
+    std::vector<unsigned> ikernel(kernel.size());
+    for(size_t i=0;i<ikernel.size();i++) {
+        ikernel[i] = kernel[i] / 16 * UINT_MAX;
+    }
+    int eradius = (radius + 3)/4*4;
+    std::vector<std::vector<int> > safetypes = expanded_types(eradius);
 
 	int rows = types.size();
 	int cols = types[0].size();
 
+    #ifdef USE_SIMD
+
+    typedef unsigned int int4 __attribute__ ((vector_size(16)));
+    typedef unsigned int int4u __attribute__ ((vector_size(16),aligned(4)));
+    auto runner = [&](int from,int to) {	
+        for(int r=from;r<to;r++) {
+            for(int c=0;c<cols;c+=4) {
+                int ref_r = r+eradius;
+                int ref_c = c+eradius;
+                int4 sr[3][3] = {
+                    { *(int4u*)&safetypes[ref_r-1][ref_c-1],*(int4*)&safetypes[ref_r-1][ref_c+0],*(int4u*)&safetypes[ref_r-1][ref_c+1] },
+                    { *(int4u*)&safetypes[ref_r  ][ref_c-1],*(int4*)&safetypes[ref_r  ][ref_c+0],*(int4u*)&safetypes[ref_r  ][ref_c+1] },
+                    { *(int4u*)&safetypes[ref_r+1][ref_c-1],*(int4*)&safetypes[ref_r+1][ref_c+0],*(int4u*)&safetypes[ref_r+1][ref_c+1] },
+                };
+                int4 blue =
+                                (sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
+                            + 2*(sr[1][0] & 0x1) + 4*(sr[1][1] & 0x1) + 2*(sr[1][2] & 0x1)
+                            +   (sr[2][0] & 0x1) + 2*(sr[2][1] & 0x1) +   (sr[2][2] & 0x1);
+                
+                int4 center = sr[1][1];
+                
+                blue = (blue * 255 + 8)/ 16;
+
+                if(blue[0] == 255 && blue[1] == 255 && blue[2]==255 && blue[3] == 255) {
+                    continue;
+                }
+
+                int4 red_sum    = {0,0,0,0};
+                int4 red_weight = {0,0,0,0};
+                int kp = 0;
+                for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
+                    for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
+                        int4 type = *(int4u*)&safetypes[ref_r+dr][ref_c+dc];
+                        unsigned int kv = ikernel[kp++];
+                        int4 weight = (type & 1) == 0 ? int4{kv,kv,kv,kv} : int4{0,0,0,0};
+                        red_weight += weight;
+                        red_sum    += weight * (type>>(16+4));
+                    }
+                }
+                int4 safe_red_weight = red_weight == 0 ? int4{1,1,1,1} : red_weight;
+                int4 red = red_weight == 0 ? int4{0,0,0,0} : ((red_sum + red_weight/2) / safe_red_weight) * 16;
+                int4 green = (center >> 8) & 0xFF;
+                
+                *(int4*)&types[r][c] = blue == 255 ? center : ((red << 16) + (green << 8) + blue);
+            }
+        }
+    }; // runner*/
+    
+    #else
+    
     auto runner = [&](int from,int to) {	
         for(int r=from;r<to;r++) {
             for(int c=0;c<cols;c++) {
-                int ref_r = r+radius;
-                int ref_c = c+radius;
+                int ref_r = r+eradius;
+                int ref_c = c+eradius;
                 int *sr[3] = {
                     &safetypes[ref_r-1][ref_c-1],
                     &safetypes[ref_r][ref_c-1],
                     &safetypes[ref_r+1][ref_c-1]
                 };
-                int blue =      (sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
+                unsigned blue =
+                                (sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
                             + 2*(sr[1][0] & 0x1) + 4*(sr[1][1] & 0x1) + 2*(sr[1][2] & 0x1)
                             +   (sr[2][0] & 0x1) + 2*(sr[2][1] & 0x1) +   (sr[2][2] & 0x1);
                 blue = (blue * 255 + 8)/ 16;
                 if(blue == 255)
                     continue;
 
-                double red_sum    = 0;
-                double red_weight = 0;
+                unsigned red_sum    = 0;
+                unsigned red_weight = 0;
+                int kp = 0;
                 for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
                     for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
-                        int type = safetypes[ref_r+dr][ref_c+dc];
-                        int red_type = type >> (16 + 4);
-                        double weight = kernel[kr][kc];
-                        int sum_factor  = (type & 1)  ^ 1; // blue == 0 for blue one of 0xFF or 0
-                        red_sum    += red_type * weight * sum_factor;
-                        red_weight += weight * sum_factor;
+                        unsigned type = safetypes[ref_r+dr][ref_c+dc];
+                        unsigned sum_factor  = (type & 1)  == 0; // blue == 0 for blue one of 0xFF or 0
+                        unsigned weight = sum_factor * ikernel[kp++];
+                        red_weight += weight;
+                        red_sum    += weight * (type >> (16 + 4));
                     }
                 }
                 
-                int red = int(red_sum / red_weight + 0.5)*16;
-                int green = (safetypes[ref_r][ref_c] >> 8) & 0xFF;
+                unsigned red = ((red_sum + red_weight/2)/red_weight)*16;
+                unsigned green = (safetypes[ref_r][ref_c] >> 8) & 0xFF;
                 types[r][c] = (red << 16) + (green << 8) + blue;
             }
         }
-    }; // runner
+    };
+    #endif
+   
 
     // split for multiple threads
 	int threads = std::thread::hardware_concurrency();
@@ -895,7 +955,7 @@ double low_pass_filter_splattype(int radius)
     }
 	
     auto end_ts = std::chrono::high_resolution_clock::now();
-	double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end_ts-start_ts).count();
+	float time = std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1> > >(end_ts-start_ts).count();
     return time;
 }
 

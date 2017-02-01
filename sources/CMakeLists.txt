@@ -2,12 +2,12 @@ cmake_minimum_required(VERSION 2.8)
 
 # MinGW Specific
 if(WIN32)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -O2 -g -Wall -m32 -Wl,--enable-stdcall-fixup -DDLL_EXPORT -Wno-deprecated-declarations")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_SIMD -mmmx -msse2 -msse3 -std=c++0x -O2 -g -Wall -m32 -Wl,--enable-stdcall-fixup -DDLL_EXPORT -Wno-deprecated-declarations")
 	set(CMAKE_RC_FLAGS " -F pe-i386")
 	set(PLATFORM_LIBS winmm wldap32 ws2_32 urlmon)
 	set(EXTRASRC makeahmap.rc)
 else()
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O3 -g -Wall -Wno-deprecated-declarations -pthread -fopenmp")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_SIMD -std=c++11 -O3 -g -Wall -Wno-deprecated-declarations -pthread")
 	set(PLATFORM_LIBS pthread)
 endif()
 

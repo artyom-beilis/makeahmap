@@ -8,6 +8,7 @@
 #include <iostream>
 #include <sstream>
 #include <chrono>
+#include <thread>
 
 
 template<typename Solver>
@@ -25,7 +26,7 @@ public:
 		std::vector<std::pair<int,int> > index;
 		std::vector<std::vector<int> > rindex(N,std::vector<int>(N,0));
 		index.reserve(N*N);
-		int variables=0;
+		int variables = 0;
 		for(int i=0;i<N;i++) {
 			for(int j=0;j<N;j++) {
 				if(!bmask[i][j]) {
@@ -37,10 +38,13 @@ public:
 					rindex[i][j]=-1;
 			}
 		}
+		
+		int align_factor = 4 * std::thread::hardware_concurrency();
+		int variables_aligned = (variables + align_factor - 1) / align_factor * align_factor;
 
-		slv.init_matrix(variables);
-		std::vector<float> y(variables,0);
-		std::vector<float> x0(variables,0);
+		slv.init_matrix(variables_aligned);
+		std::vector<float> y(variables_aligned,0);
+		std::vector<float> x0(variables_aligned,0);
 
 		for(int i=0;i<variables;i++) {
 			int r=index[i].first;
@@ -59,7 +63,7 @@ public:
 		}
 
 		auto start = std::chrono::high_resolution_clock::now();
-		std::pair<int,double> st = slv.solve(y.data(),x0.data(),thresh,variables);
+		std::pair<int,double> st = slv.solve(y.data(),x0.data(),thresh,variables_aligned);
 		auto end = std::chrono::high_resolution_clock::now();
 
 		double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end-start).count();

@@ -285,9 +285,9 @@ public:
 		return std::make_pair(it,time);
 	}
 	
-	static int get_bytes_per_it()
+	double get_bytes_per_it()
 	{
-		return sizeof(eq_solver::row) + sizeof(float)* ( 2 + 3 + 3 + 3);
+		return sizeof(eq_solver::row) + sizeof(float)* (2 + 3 + 3 + 3);
 	}
 
 	context_with_program ctx_;
