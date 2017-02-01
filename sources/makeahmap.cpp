@@ -37,6 +37,7 @@
 #include <limits>
 #include <string>
 #include <thread>
+#include <streambuf>
 #include <set>
 #include "bmp.h"
 #include "gshhs.h"
@@ -429,7 +430,58 @@ bool yesno(std::string const &key,std::string const &value)
     throw parsing_error("Invalid key value "  + key + " expected to be yes or no");
 }
 
-void load_profile(std::string file_name)
+
+class logger : public std::streambuf {
+public:
+    logger(std::ostream &out,std::ofstream &log)
+    {
+        out_ = &out;
+        buf_ = out.rdbuf(this);
+        log_ = &log;
+    }
+    void close()
+    {
+        if(buf_ != 0) {
+            out_->rdbuf(buf_);
+            buf_ = 0;
+        }
+    }
+    ~logger()
+    {
+        close();
+    }
+    virtual std::streamsize xputn(char const *s,std::streamsize n)
+    {
+        log_->write(s,n);
+        log_->flush();
+        std::streamsize r = buf_->sputn(s,n);
+        if(buf_->pubsync()!=0)
+            return -1;
+        return r;
+    }
+    virtual int overflow(int c)
+    {
+        if(c!=EOF) {
+            char ch=c;
+            log_->write(&ch,1);
+            log_->flush();
+        }
+        if(c!=EOF)
+            buf_->sputc(c);
+        if(buf_->pubsync()!=0)
+            return -1;
+        if(c!=EOF)
+            return c;
+        return 0;
+    }
+private:
+    std::streambuf *buf_;
+    std::ostream *out_;
+    std::ofstream *log_;
+};
+
+
+void load_profile(std::string file_name,std::ofstream &log)
 {
     std::ifstream in(file_name.c_str());
     if(!in) {
@@ -442,14 +494,26 @@ void load_profile(std::string file_name)
     double scale = -1;
     double lat_c=-1000,lon_c=-1000;
     int line = 0;
+    log<< "- Loading Profile from " << file_name << std::endl;
     try {
         while(!in.eof()) {
             std::string s;
             std::getline(in,s);
             line++;
             std::string key,value,index;
-            if(!parse(s,key,value,index))
-                continue;
+            try {
+                if(!parse(s,key,value,index))
+                    continue;
+            }
+            catch(...) {
+                log << "Exception in line " << line << " :" << s << std::endl;
+                throw;
+            }
+            if(index.empty())
+                log << "  " << key << "=" << value << std::endl;
+            else
+                log << "  " << key << " with " << index << " =" << value << std::endl;
+
             if(key == "map_size") {
                 map_size = atoi(value.c_str());
                 switch(map_size) {
@@ -1698,22 +1762,24 @@ void pass_one()
 }
 */
 
-void test_up_to_date(int check_updates)
+std::string test_up_to_date(int check_updates)
 {
-	if(check_updates < 0)
-		return;
-	time_t last_test = 0;
-	{
-		std::ifstream f("./data/last_update.txt");
-		if(f) {
-			f >> last_test;
-			if(f && (time(0) - last_test < check_updates * 3600 * 24))
-				return;
-		}
-	}
-	std::cout << "- Checking for makeahmap updates... " << std::flush;
+    std::string res;
 	try {
 		makeahmap_version current = get_current_version();
+        res = current.str();
+        if(check_updates < 0)
+            return res;
+        time_t last_test = 0;
+        {
+            std::ifstream f("./data/last_update.txt");
+            if(f) {
+                f >> last_test;
+                if(f && (time(0) - last_test < check_updates * 3600 * 24))
+                    return res;
+            }
+        }
+    	std::cout << "- Checking for makeahmap updates... " << std::flush;
 		makeahmap_version latest = get_latest_version();
 		if(current < latest) {
 			std::cout << "  Newer Version Avalible " << latest << " !!!"<< std::endl;
@@ -1732,6 +1798,7 @@ void test_up_to_date(int check_updates)
 	}
 	std::ofstream f("./data/last_update.txt");
 	f << time(0);
+    return res;
 		
 }
 
@@ -1834,6 +1901,9 @@ void mark_type_and_save(int type)
 
 int main(int argc,char **argv)
 {
+    std::ofstream log("./output/log.txt");
+    logger lcout(std::cout,log);
+    logger lcerr(std::cerr,log);
     try {
         int save_globcover_type = -1;
         std::string file_name = "config.ini";
@@ -1850,9 +1920,9 @@ int main(int argc,char **argv)
             }
         }
 
-        load_profile(file_name);
+        load_profile(file_name,log);
 		
-		test_up_to_date(check_updates);
+		log << "- Version: " << test_up_to_date(check_updates) << std::endl;
 
         downloader::manager::instance().init(download_sources,temp_dir,auto_download_enabled,disable_ssl_check);
        
@@ -1926,6 +1996,8 @@ int main(int argc,char **argv)
         
         std::cout << "\n\nCompleted\n";
 
+        lcerr.close();
+        lcout.close();
 #if defined(_WIN32) || defined(WIN32)
         std::cout << "Press Enter to exit..." << std::endl;
         std::cin.get();
@@ -1934,6 +2006,8 @@ int main(int argc,char **argv)
     }
     catch(std::exception const &e) {
         std::cerr << "\nError:" << e.what() << std::endl;
+        lcerr.close();
+        lcout.close();
 #if defined(_WIN32) || defined(WIN32)
         std::cerr << "Press Enter to exit..." << std::endl;
         std::cin.get();
