@@ -1,6 +1,7 @@
 #include "url.h"
-#if defined WIN32 && ! defined USE_CURL_ON_WINDOWS
+#if (defined(WIN32) || defined(_WIN32)) && ! defined USE_CURL_ON_WINDOWS
 #include <urlmon.h>
+#include <wininet.h>
 #else
 #include <curl/curl.h>
 #endif
@@ -87,6 +88,7 @@ namespace downloader {
 	{
 		winprogress st;
 		winprogress *st_p = progress ? &st : nullptr;
+		DeleteUrlCacheEntry(url.c_str());
 		if(URLDownloadToFile(NULL,url.c_str(),to.c_str(),0,st_p)!=S_OK) {
 			throw std::runtime_error("Failed to download file " + url + " to " + to);
 		}
