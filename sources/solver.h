@@ -251,7 +251,7 @@ double sparce_matrix::mpl(int id,float const *vin,float *vout) const
 		typedef float float4u __attribute__((vector_size(16),aligned(4)));
 
 		for(;pos < crange.second;pos+=4,i+=4) {
-			float4 x=*(float4*)&vin[i];
+			float4 x=*(float4u*)&vin[i];
 			float4 v[4]= { 
 				*(float4u*)&vin[i - up],  
 				*(float4u*)&vin[i -  1],
@@ -262,7 +262,7 @@ double sparce_matrix::mpl(int id,float const *vin,float *vout) const
 			float4 y = x - 0.25f * (v[0]+v[1]+v[2]+v[3]);
 			float4 sum4 = x*y;
 			sum += (sum4[0]+sum4[1]) + (sum4[2]+sum4[3]);
-			*(float4*)&vout[i] = y;
+			*(float4u*)&vout[i] = y;
 		}
 
 		#else
@@ -412,7 +412,7 @@ std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x
 
 	
 	#ifdef USE_SIMD
-	typedef float float_type __attribute__((vector_size(16)));
+	typedef float float_type __attribute__((vector_size(16),aligned(4)));
 	#define float_type_sum(x) ( ((x)[0] + (x)[1]) + ((x)[2] + (x)[3]) )
 	static const int op_factor = 4;
 	#else

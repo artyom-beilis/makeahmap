@@ -925,9 +925,9 @@ float low_pass_filter_splattype(int radius)
                 int ref_r = r+eradius;
                 int ref_c = c+eradius;
                 int4 sr[3][3] = {
-                    { *(int4u*)&safetypes[ref_r-1][ref_c-1],*(int4*)&safetypes[ref_r-1][ref_c+0],*(int4u*)&safetypes[ref_r-1][ref_c+1] },
-                    { *(int4u*)&safetypes[ref_r  ][ref_c-1],*(int4*)&safetypes[ref_r  ][ref_c+0],*(int4u*)&safetypes[ref_r  ][ref_c+1] },
-                    { *(int4u*)&safetypes[ref_r+1][ref_c-1],*(int4*)&safetypes[ref_r+1][ref_c+0],*(int4u*)&safetypes[ref_r+1][ref_c+1] },
+                    { *(int4u*)&safetypes[ref_r-1][ref_c-1],*(int4u*)&safetypes[ref_r-1][ref_c+0],*(int4u*)&safetypes[ref_r-1][ref_c+1] },
+                    { *(int4u*)&safetypes[ref_r  ][ref_c-1],*(int4u*)&safetypes[ref_r  ][ref_c+0],*(int4u*)&safetypes[ref_r  ][ref_c+1] },
+                    { *(int4u*)&safetypes[ref_r+1][ref_c-1],*(int4u*)&safetypes[ref_r+1][ref_c+0],*(int4u*)&safetypes[ref_r+1][ref_c+1] },
                 };
                 int4 blue =
                                 (sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
@@ -958,7 +958,7 @@ float low_pass_filter_splattype(int radius)
                 int4 red = red_weight == 0 ? int4{0,0,0,0} : ((red_sum + red_weight/2) / safe_red_weight) * 16;
                 int4 green = (center >> 8) & 0xFF;
                 
-                *(int4*)&types[r][c] = blue == 255 ? center : ((red << 16) + (green << 8) + blue);
+                *(int4u*)&types[r][c] = blue == 255 ? center : ((red << 16) + (green << 8) + blue);
             }
         }
     }; // runner*/
