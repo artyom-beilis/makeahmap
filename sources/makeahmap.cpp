@@ -1794,6 +1794,7 @@ void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &e
     outfile f(map_file);
     f.write(&h,sizeof(h));
     int factor_type = map_size * 8;
+    int water_step = std::max(factor_type / tsize,1);
     for(int r=tsize-1;r>=0;r--) {
         std::vector<unsigned char> colors(tsize);
         for(int c=0;c<tsize;c++) {
@@ -1804,25 +1805,22 @@ void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &e
                 int t_r = factor_type * r / tsize;
                 int t_c = factor_type * c / tsize;
                 int type = types.at(t_r).at(t_c);
-                int t_r_e = std::min(factor_type * (r+1) / tsize,factor_type);
-                int t_c_e = std::min(factor_type * (c+1) / tsize,factor_type);
 
                 bool has_water=false;
                 bool has_ground=false;
 
-                for(int wr=t_r;wr<t_r_e;wr++) {
-                    for(int wc=t_c;wc<t_c_e;wc++) {
-                        try {
-							int alt = elev.at(wr).at(wc);
-							if(alt <= 0)
-								has_water = true;
-							else if(alt > 0)
-								has_ground = true;
-                        }
-                        catch(...) {
-                            std::cerr << r << " " << c << " " << wr << " " << wc << std::endl;
-                            throw;
-                        }
+                int t_r_b = std::max(t_r,0);
+                int t_c_b = std::max(t_c,0);
+                int t_r_e = std::min(t_r + water_step + 1,factor_type);
+                int t_c_e = std::min(t_c + water_step + 1,factor_type);
+                
+                for(int wr=t_r_b;wr<t_r_e;wr++) {
+                    for(int wc=t_c_b;wc<t_c_e;wc++) {
+						int alt = elev[wr][wc];
+						if(alt <= 0)
+							has_water = true;
+						else if(alt > 0)
+							has_ground = true;
                     }
                 }
                 int color;
