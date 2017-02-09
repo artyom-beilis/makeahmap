@@ -1445,11 +1445,11 @@ void make_map_color_index(bmp::header &hdr)
 int get_color_from_type(int type,double brightness_factor)
 {
 	
-	if(type & 0xFF) {
-		type = type >> (8+8+4);
+	if((type & 0xFF) >= 127) {
+		type = 16+((type >> 8) / 0x40 & 0x3);
 	}
 	else {
-		type = 16+((type >> 8) / 0x40 & 0x3);
+		type = type >> (8+8+4);
 	}
 	assert(0<=type && type<=19);
 
@@ -1465,7 +1465,7 @@ int get_color_from_type(int type,double brightness_factor)
     //  50- 99 - forest
     //   0- 49 - farm 
     
-    int basic = type / 5;
+    int basic = 4 - (type / 4);
 /*    switch(type & 0xF) {
     case 4:
     case 5:
