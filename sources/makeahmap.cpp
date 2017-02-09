@@ -86,6 +86,7 @@ std::string custom_mapping;
 std::string output_dir = "./output";
 std::string download_sources = "download_sources.txt";
 std::string temp_dir = "./temp";
+std::string cbm_grid_type = "game";
 bool auto_download_enabled = true;
 bool disable_ssl_check = false;
 char const *real_file=0;
@@ -528,6 +529,16 @@ void load_profile(std::string file_name,std::ofstream &log)
             }
             else if(key == "cbm_size") {
                 cbm_size = atoi(value.c_str());
+            }
+            else if(key == "cbm_grid") {
+                if(value == "game" || value=="geo" || value=="geo_dd" || value=="geo_dm") {
+                    if(value == "geo")
+                        cbm_grid_type = "geo_dd";
+                    else
+                        cbm_grid_type = value;
+                }
+                else
+                    throw parsing_error("Invalid value " + value + "  for cbm_grid, expected one of : game, geo, geo_dd, geo_dm");
             }
 			else if(key == "splattype_filter_radius") {
 				splattype_filter_radius = atoi(value.c_str());
@@ -1547,6 +1558,208 @@ std::vector<std::vector<bool> > load_grid(size_t tsize)
     return grid;
 }
 
+std::string to_deg(double v,char Pos,char Neg)
+{
+    std::ostringstream ss;
+    int total_seconds = int(round((v+360.0)*3600));
+    int degree  = total_seconds / 3600 - 360;
+    int minutes = (total_seconds % 3600) / 60;
+    int seconds = total_seconds % 60;
+    ss << abs(degree) << "\xB0";
+    if(minutes!=0)
+        ss << minutes << "'";
+    if(seconds!=0)
+        ss << seconds << '"';
+    if(degree < 0)
+        ss << Neg;
+    else
+        ss << Pos;
+    return ss.str();
+}
+
+std::string get_coord(double lat,double lon,int acc_lan,int acc_lon)
+{
+    std::ostringstream ss;
+    if(lon > 180)
+        lon -= 360;
+    else if(lon < -180)
+        lon += 360;
+    if(cbm_grid_type == "geo_dd")
+        ss <<std::fixed  << std::setprecision(acc_lan) << lat << ", " << std::setprecision(acc_lon) << lon;
+    else
+        ss << to_deg(lat,'N','S') << ", " << to_deg(lon,'E','W');
+    return ss.str();
+}
+
+
+int get_coord_spacing(int acc_lat,int acc_lon)
+{
+    double lats[4]={lat1,lat1,lat2,lat2};
+    double lons[4]={lon1,lon2,lon1,lon2};
+    int pixels = 1;
+    for(int i=0;i<4;i++) {
+        std::string coord = get_coord(lats[i],lons[i],acc_lat,acc_lon);
+        pixels =std::max(get_print_str_len(coord.c_str()),pixels);
+    }
+    return pixels;
+}
+
+
+struct tick_grid {
+    int digits;
+    double tick;
+    double tick2;
+    double tick3;
+    double start;
+    double end;
+};
+
+tick_grid get_optimal_grid_step(double v1,double v2,int image_size,int pixels_needed = 0)
+{
+    bool decimal_grid = cbm_grid_type == "geo_dd";
+
+    double vmin = std::min(v1,v2);
+    double vmax = std::max(v1,v2);
+    double total_steps = double(image_size) / pixels_needed;
+    double range = (vmax - vmin) / total_steps;
+    int    power = ceil(log(range)/log(10));
+    double tick = pow(10.0,power);
+    double res = range / tick;
+    tick_grid r;
+    r.digits = - power;
+    if(res < 0.2) {
+        tick /= 5;
+        r.digits ++;
+    }
+    else if(res < 0.5) {
+        tick /= 2;
+        r.digits ++;
+    }
+    if(r.digits < 0)
+        r.digits = 0;
+
+    if(decimal_grid || tick >= 5) {
+        r.tick = tick;
+        r.tick2 = tick / 5;
+        r.tick3 = tick / 10;
+    }
+    else {
+        if(tick < 1) {
+            int factors[]={1,2,3,5,10,20,30,60, 2*60,3*60,5*60,10*60,20*60,30*60,60*60};
+            int total_factors = sizeof(factors)/sizeof(int);
+            int pos = 0;
+            while(pos + 1 < total_factors && range / (1.0 / factors[pos+1]) < 1)
+                pos++;
+            tick = 1.0 / factors[pos];
+        }
+        r.tick = tick;
+        r.tick2 = tick / 6;
+        r.tick3 = tick / 12;
+    }
+    r.start = floor( vmin/tick) * tick;
+    r.end   = ceil(  vmax/tick) * tick;
+    return r;
+}
+
+std::vector<std::vector<bool> > load_grid_lat_lon(int tsize)
+{
+    std::vector<std::vector<bool> > grid(tsize,std::vector<bool>(tsize));
+    static const int y_spacing = 12 * 10;
+    tick_grid gy = get_optimal_grid_step(lat1,lat2,tsize,y_spacing);
+    tick_grid gx;
+    int digits_lon = 0;
+    for(;;) {
+        int spacing;
+        for(;;){
+            spacing = get_coord_spacing(gy.digits,digits_lon) + 15;
+            if(spacing * 2 > y_spacing)
+                break;
+            digits_lon++;
+        }
+        tick_grid gx_tmp = get_optimal_grid_step(lon1,lon2,tsize,spacing);
+        if(gx_tmp.digits <= digits_lon) {
+            gx = gx_tmp;
+            break;
+        }
+        digits_lon ++;
+    }
+    double row_factor = tsize / (lat2 - lat1);
+    double col_factor = tsize / (lon2 - lon1);
+    auto lat2row=[=](double lat) -> int{
+        return round((lat-lat1) * row_factor);
+    };
+    auto lon2col=[=](double lon) -> int{
+        return round((lon-lon1) * col_factor);
+    };
+
+    double ytick2 = gy.tick2;
+    double xtick2 = gx.tick2;
+    
+    double ytick3 = gy.tick3;
+    double xtick3 = gx.tick3;
+
+    for(double lat=gy.start;lat<=gy.end;lat+=gy.tick) {
+        int row = lat2row(lat);
+        if(0<=row && row < tsize) {
+            for(int c=0;c<tsize;c++)
+                grid[row][c]=true;
+        }
+    }
+    for(double lon=gx.start;lon<=gx.end;lon+=gx.tick) {
+        int col = lon2col(lon);
+        if(0<=col && col < tsize) {
+            for(int r=0;r<tsize;r++)
+                grid[r][col]=true;
+        }
+    }
+
+    for(double lat=gy.start;lat<=gy.end;lat+=ytick2) {
+        int row = lat2row(lat);
+        if(row < 1 || row +1 >= tsize) 
+            continue;
+        for(double lon=gx.start;lon<=gx.end;lon+=xtick2) {
+            int col = lon2col(lon);
+            if(col < 1 || col + 1 >= tsize) 
+                continue;
+            grid[row][col]  =true;
+            grid[row][col+1]=true;
+            grid[row][col-1]=true;
+            grid[row+1][col]=true;
+            grid[row-1][col]=true;
+        }
+    }
+
+    for(double lat=gy.start;lat<=gy.end;lat+=ytick3) {
+        int row = lat2row(lat);
+        for(double lon=gx.start;lon<=gx.end;lon+=xtick2) {
+            int col = lon2col(lon);
+            if(col < 1 || col + 1 >= tsize || row < 1 || row +1 >= tsize) 
+                continue;
+            grid[row][col]  =true;
+        }
+    }
+    
+    for(double lat=gy.start;lat<=gy.end;lat+=ytick2) {
+        int row = lat2row(lat);
+        for(double lon=gx.start;lon<=gx.end;lon+=xtick3) {
+            int col = lon2col(lon);
+            if(col < 1 || col + 1 >= tsize || row < 1 || row +1 >= tsize) 
+                continue;
+            grid[row][col]  =true;
+        }
+    }
+    
+    for(double lat=gy.start;lat<=gy.end;lat+=gy.tick) {
+        int row = lat2row(lat);
+        for(double lon=gx.start;lon<=gx.end;lon+=gx.tick) {
+            int col = lon2col(lon);
+            std::string coord = get_coord(lat,lon,gy.digits,gx.digits);
+            print_str(coord.c_str(),row, col + 2,1,grid);
+        }
+    }
+    return grid;
+}
+
 void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &elev)
 {
     int tsize;
@@ -1561,8 +1774,10 @@ void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &e
 
     std::vector<std::vector<bool> > grid;
     try {
-        std::vector<std::vector<bool> > tmp = load_grid(tsize);
-        grid.swap(tmp);
+        if(cbm_grid_type == "game") 
+            grid = std::move(load_grid(tsize));
+        else 
+            grid = std::move(load_grid_lat_lon(tsize));
     }
     catch(std::exception const &e) {
         std::cout << "\n    Failed to load grid texture: " << e.what() 
