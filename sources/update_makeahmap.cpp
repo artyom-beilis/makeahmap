@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdio.h>
 #if defined(WIN32)  || defined(_WIN32)
+# include <windows.h>
 # include <io.h>
 #  ifndef access
 #   define access(x,y) _access(x,y)
@@ -20,11 +21,16 @@ void restore()
 	rename(".\\temp\\update_save.exe","update_makeahmap.exe");
 	
 }
-void checker()
+bool checker()
 {
 	makeahmap_version current = get_current_version();
 	std::cout << "Current Version : " << current << std::endl;
 	makeahmap_version latest = get_latest_version();
+	
+	char const *latest_override = getenv("LATEST");
+	if(latest_override)
+		latest = makeahmap_version(latest_override);
+	
 	std::cout << "Latest Version  : " << latest << std::endl;
 	if(current == latest || current > latest) {
 		std::cout << "The version is up to date" << std::endl;
@@ -35,20 +41,28 @@ void checker()
 	std::string zip = dir + ".zip";
 	remove(zip.c_str());
 	system("del /S /Q .\\temp\\makeahmap-*.zip .\\temp\\makeahmap-*");
-	std::cout << "Downloading: "  << url  << " to " << zip << std::endl;
-	downloader::download_file_generic(url,zip);
+	if(!latest_override) {
+		std::cout << "Downloading: "  << url  << " to " << zip << std::endl;
+		downloader::download_file_generic(url,zip);
+	}
+	else {
+		CopyFile(("..\\makeahmap-" + latest.str() + ".zip").c_str(),zip.c_str(),FALSE);
+	}
 	if(system(("unzip -o " + zip + " -d .\\temp\\").c_str())!=0)
 		throw std::runtime_error("Failed to unzip " + zip);	
 	remove(".\\temp\\update_save.exe");
 	if(rename("update_makeahmap.exe",".\\temp\\update_save.exe")!=0)
 		throw std::runtime_error("Failed to move update_makeahmap.exe");
+	std::cout << "Testing: " << (dir + "\\update_script.bat") << std::endl;
 	if(access((dir + "\\update_script.bat").c_str(),F_OK)==0) {
+		std::cout << "Running: " << (dir + "\\update_script.bat") << std::endl;
 		if(system((dir + "\\update_script.bat").c_str())!=0) {
 			restore();
 			throw std::runtime_error(dir + "\\update_script.bat returned with error!");
 		}
 	}
 	else {
+		std::cout << "Using default upgrade procedure " << std::endl;
 		if(system(("xcopy " + dir + "\\* .\\ /A /EXCLUDE:config.ini /E /Y").c_str())) {
 			restore();
 			throw std::runtime_error("Failed to copy files");
@@ -62,15 +76,18 @@ void checker()
 	if(current==latest) {
 		std::cout << "Upgraded sucessefully to " << latest << std::endl;
 		system("start notepad.exe Changelog.txt");
+		return true;
 	}
 	else
 		throw std::runtime_error("Failed to upgrade to " + latest.str() + " current version is " + current.str());
+	return false;
 }
 int main()
 {
 	int r=0;
 	try {
-		checker();
+		if(checker())
+			return 0;
 	}
 	catch(std::exception const &e) {
 		r=1;

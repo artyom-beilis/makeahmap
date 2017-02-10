@@ -59,10 +59,8 @@ endif()
 
 target_link_libraries(makeahmap ${STDLIBS} ${PLATFORM_LIBS})
 
-add_executable(update_makeahmap update_makeahmap.cpp url.cpp)
-if(NOT WIN32)
-	target_link_libraries(update_makeahmap ${CURL})
-else()
+if(WIN32)
+	add_executable(update_makeahmap update_makeahmap.cpp url.cpp)
 	set_target_properties(update_makeahmap PROPERTIES COMPILE_FLAGS "-static -static-libgcc -static-libstdc++")
 	set_target_properties(update_makeahmap PROPERTIES LINK_FLAGS "-static -static-libgcc -static-libstdc++")
 	target_link_libraries(update_makeahmap urlmon wininet)
