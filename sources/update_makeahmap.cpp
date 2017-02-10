@@ -34,7 +34,7 @@ bool checker()
 	std::cout << "Latest Version  : " << latest << std::endl;
 	if(current == latest || current > latest) {
 		std::cout << "The version is up to date" << std::endl;
-		return;
+		return false;
 	}
 	std::string dir = ".\\temp\\makeahmap-" + latest.str();
 	std::string url = BASE_URL + "makeahmap-" + latest.str() + ".zip";
