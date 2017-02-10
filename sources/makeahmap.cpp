@@ -1558,19 +1558,22 @@ std::vector<std::vector<bool> > load_grid(size_t tsize)
     return grid;
 }
 
-std::string to_deg(double v,char Pos,char Neg)
+std::string to_deg(double v,char Pos,char Neg,int acc)
 {
     std::ostringstream ss;
-    int total_seconds = int(round((v+360.0)*3600));
-    int degree  = total_seconds / 3600 - 360;
+    int total_seconds = int(round((v)*3600));
+	bool neg = total_seconds < 0;
+	total_seconds = labs(total_seconds);
+	
+    int degree  = total_seconds / 3600;
     int minutes = (total_seconds % 3600) / 60;
     int seconds = total_seconds % 60;
     ss << abs(degree) << "\xB0";
-    if(minutes!=0)
+    if(acc >= 1 && minutes!=0)
         ss << minutes << "'";
-    if(seconds!=0)
+    if(acc >= 2 && seconds!=0)
         ss << seconds << '"';
-    if(degree < 0)
+    if(neg)
         ss << Neg;
     else
         ss << Pos;
@@ -1587,7 +1590,7 @@ std::string get_coord(double lat,double lon,int acc_lan,int acc_lon)
     if(cbm_grid_type == "geo_dd")
         ss <<std::fixed  << std::setprecision(acc_lan) << lat << ", " << std::setprecision(acc_lon) << lon;
     else
-        ss << to_deg(lat,'N','S') << ", " << to_deg(lon,'E','W');
+        ss << to_deg(lat,'N','S',acc_lan) << ", " << to_deg(lon,'E','W',acc_lon);
     return ss.str();
 }
 
@@ -1651,6 +1654,12 @@ tick_grid get_optimal_grid_step(double v1,double v2,int image_size,int pixels_ne
             while(pos + 1 < total_factors && range / (1.0 / factors[pos+1]) < 1)
                 pos++;
             tick = 1.0 / factors[pos];
+			if(factors[pos] <= 1)
+				r.digits = 0;
+			else if(factors[pos] <= 60)
+				r.digits = 1;
+			else
+				r.digits = 2;
         }
         r.tick = tick;
         r.tick2 = tick / 6;
