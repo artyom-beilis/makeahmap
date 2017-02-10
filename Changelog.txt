@@ -1,6 +1,35 @@
 2017-02-10: Version 1.10
 
-- Fix Me Later
+- Fixed several issue with clipboard map generation: 
+  * Water wasn't properly colored on small 64x64 maps (bug #7)
+  * Beach color wasn't continuous 
+  * Bad atlats to CBM color was used (regression)
+
+- It is now possible to create clipboard map with geographical
+  rather than game grid by specifying:
+  
+    cbm_grid=geo_dd
+	 
+  for geographical grid using decimal digits: 31.5, -1.2
+
+    cbm_grid=geo_dm
+  
+  for geographical grid with degrees and minutes of arch: 31°30'N, 1°12'W
+
+- Now every run of makeahmap.exe creates a full log in the output\log.txt
+  directory that can be used for issues solving
+
+- The makeahmap_cpu.exe - is no longer needed, makeahmap.exe runs
+  correctly even if OpenCL.dll is missing - it falls back to CPU 
+  implementation
+  
+- Performance improvements in splattype generation and CPU
+  based water optimization.
+
+  - Fixed cleaup of temporary after upgrade bug #8
+
+
+
 
 2017-01-25: Version 1.9
 
