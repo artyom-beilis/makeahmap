@@ -2138,7 +2138,7 @@ int main(int argc,char **argv)
                 save_globcover_type = atoi(param.c_str() + 7);
             }
             else {
-                file_name == param;
+                file_name = param;
             }
         }
 
