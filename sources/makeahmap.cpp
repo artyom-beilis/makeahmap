@@ -489,6 +489,12 @@ void load_profile(std::string file_name,std::ofstream &log)
         throw std::runtime_error("Failed to open file " + file_name);
     }
 
+	char bom[4]={};
+	in.read(bom,3);
+	if(bom!=std::string("\xEF\xBB\xBF")) {
+		in.seekg(0);
+	}
+
     std::string dem_prefix;
     bool via_scale = false;
     bool via_coord = false;
