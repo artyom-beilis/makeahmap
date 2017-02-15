@@ -26,43 +26,44 @@ gshhs zip gshhs_f.b wdb_rivers_f.b https://www.ngdc.noaa.gov/mgg/shorelines/data
 # GTOPO30
 #
 # ftp://edcftp.cr.usgs.gov/data/gtopo30/global/
+# http://www.webgis.com/GTOPO30/w020n90.zip
 #
 
-gtopo30/E020N40.DEM tgz E020N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e020n40.tar.gz
-gtopo30/E020N90.DEM tgz E020N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e020n90.tar.gz
-gtopo30/E020S10.DEM tgz E020S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e020s10.tar.gz
+gtopo30/E020N40.DEM zip E020N40.DEM - http://www.webgis.com/GTOPO30/e020n40.zip
+gtopo30/E020N90.DEM zip E020N90.DEM - http://www.webgis.com/GTOPO30/e020n90.zip
+gtopo30/E020S10.DEM zip E020S10.DEM - http://www.webgis.com/GTOPO30/e020s10.zip
 
-gtopo30/E060N40.DEM tgz E060N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e060n40.tar.gz
-gtopo30/E060N90.DEM tgz E060N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e060n90.tar.gz
-gtopo30/E060S10.DEM tgz E060S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e060s10.tar.gz
+gtopo30/E060N40.DEM zip E060N40.DEM - http://www.webgis.com/GTOPO30/e060n40.zip
+gtopo30/E060N90.DEM zip E060N90.DEM - http://www.webgis.com/GTOPO30/e060n90.zip
+gtopo30/E060S10.DEM zip E060S10.DEM - http://www.webgis.com/GTOPO30/e060s10.zip
 
-gtopo30/E100N40.DEM tgz E100N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e100n40.tar.gz
-gtopo30/E100N90.DEM tgz E100N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e100n90.tar.gz
-gtopo30/E100S10.DEM tgz E100S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e100s10.tar.gz
+gtopo30/E100N40.DEM zip E100N40.DEM - http://www.webgis.com/GTOPO30/e100n40.zip
+gtopo30/E100N90.DEM zip E100N90.DEM - http://www.webgis.com/GTOPO30/e100n90.zip
+gtopo30/E100S10.DEM zip E100S10.DEM - http://www.webgis.com/GTOPO30/e100s10.zip
 
-gtopo30/E140N40.DEM tgz E140N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e140n40.tar.gz
-gtopo30/E140N90.DEM tgz E140N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e140n90.tar.gz
-gtopo30/E140S10.DEM tgz E140S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/e140s10.tar.gz
+gtopo30/E140N40.DEM zip E140N40.DEM - http://www.webgis.com/GTOPO30/e140n40.zip
+gtopo30/E140N90.DEM zip E140N90.DEM - http://www.webgis.com/GTOPO30/e140n90.zip
+gtopo30/E140S10.DEM zip E140S10.DEM - http://www.webgis.com/GTOPO30/e140s10.zip
 
-gtopo30/W020N40.DEM tgz W020N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w020n40.tar.gz
-gtopo30/W020N90.DEM tgz W020N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w020n90.tar.gz
-gtopo30/W020S10.DEM tgz W020S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w020s10.tar.gz
+gtopo30/W020N40.DEM zip W020N40.DEM - http://www.webgis.com/GTOPO30/w020n40.zip
+gtopo30/W020N90.DEM zip W020N90.DEM - http://www.webgis.com/GTOPO30/w020n90.zip
+gtopo30/W020S10.DEM zip W020S10.DEM - http://www.webgis.com/GTOPO30/w020s10.zip
 
-gtopo30/W060N40.DEM tgz W060N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w060n40.tar.gz
-gtopo30/W060N90.DEM tgz W060N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w060n90.tar.gz
-gtopo30/W060S10.DEM tgz W060S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w060s10.tar.gz
+gtopo30/W060N40.DEM zip W060N40.DEM - http://www.webgis.com/GTOPO30/w060n40.zip
+gtopo30/W060N90.DEM zip W060N90.DEM - http://www.webgis.com/GTOPO30/w060n90.zip
+gtopo30/W060S10.DEM zip W060S10.DEM - http://www.webgis.com/GTOPO30/w060s10.zip
 
-gtopo30/W100N40.DEM tgz W100N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w100n40.tar.gz
-gtopo30/W100N90.DEM tgz W100N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w100n90.tar.gz
-gtopo30/W100S10.DEM tgz W100S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w100s10.tar.gz
+gtopo30/W100N40.DEM zip W100N40.DEM - http://www.webgis.com/GTOPO30/w100n40.zip
+gtopo30/W100N90.DEM zip W100N90.DEM - http://www.webgis.com/GTOPO30/w100n90.zip
+gtopo30/W100S10.DEM zip W100S10.DEM - http://www.webgis.com/GTOPO30/w100s10.zip
 
-gtopo30/W140N40.DEM tgz W140N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w140n40.tar.gz
-gtopo30/W140N90.DEM tgz W140N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w140n90.tar.gz
-gtopo30/W140S10.DEM tgz W140S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w140s10.tar.gz
+gtopo30/W140N40.DEM zip W140N40.DEM - http://www.webgis.com/GTOPO30/w140n40.zip
+gtopo30/W140N90.DEM zip W140N90.DEM - http://www.webgis.com/GTOPO30/w140n90.zip
+gtopo30/W140S10.DEM zip W140S10.DEM - http://www.webgis.com/GTOPO30/w140s10.zip
 
-gtopo30/W180N40.DEM tgz W180N40.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w180n40.tar.gz
-gtopo30/W180N90.DEM tgz W180N90.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w180n90.tar.gz
-gtopo30/W180S10.DEM tgz W180S10.DEM - ftp://edcftp.cr.usgs.gov/data/gtopo30/global/w180s10.tar.gz
+gtopo30/W180N40.DEM zip W180N40.DEM - http://www.webgis.com/GTOPO30/w180n40.zip
+gtopo30/W180N90.DEM zip W180N90.DEM - http://www.webgis.com/GTOPO30/w180n90.zip
+gtopo30/W180S10.DEM zip W180S10.DEM - http://www.webgis.com/GTOPO30/w180s10.zip
 
 
 #
