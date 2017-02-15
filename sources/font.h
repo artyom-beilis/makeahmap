@@ -5,6 +5,37 @@
 static const int font_digit_width  = FONT_WIDTH;
 static const int font_digit_height = FONT_HEIGHT;
 
+template<typename T>
+struct get_size;
+
+template<typename M>
+struct get_size<std::vector<std::vector<M> > > {
+	static int height(std::vector<std::vector<M> > const &m)
+	{
+		return m.size();
+	}
+	static int width(std::vector<std::vector<M> > const &m)
+	{
+		return m.at(0).size();
+	}
+};
+
+template<typename T>
+class image;
+
+template<typename M>
+struct get_size<image<M> > {
+	static int height(image<M> const &m)
+	{
+		return m.height();
+	}
+	static int width(image<M> const &m)
+	{
+		return m.width();
+	}
+};
+
+
 template<typename ImgType>
 int print_char(char ch,int r,int c,int color,ImgType *img)
 {
@@ -13,9 +44,9 @@ int print_char(char ch,int r,int c,int color,ImgType *img)
 			return 0;
 		if(c < 0)
 			return 0;
-		if(r + font_digit_height >= int(img->size()))
+		if(r + font_digit_height >= get_size<ImgType>::height(*img))
 			return 0;
-		if(c + font_digit_width >= int(img->at(0).size()))
+		if(c + font_digit_width  >= get_size<ImgType>::width(*img))
 			return 0;
 	}
 	unsigned char uc=ch;

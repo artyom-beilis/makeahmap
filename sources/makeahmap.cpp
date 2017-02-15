@@ -47,6 +47,7 @@
 #include "util.h"
 #include "getversion.h"
 #include "font.h"
+#include "image.h"
 
 std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
@@ -56,7 +57,8 @@ bool remove_entire_river = false;
 dem::db_properties db_type;
 
 std::vector<std::vector<unsigned char> > bare_types;
-std::vector<std::vector<int> > types;
+//std::vector<std::vector<int> > types;
+image<int> types;
 
 static const int lower_lat = -65;
 
@@ -800,7 +802,9 @@ void resample_type()
 {
     // resample
     int bmp_size = map_size * 8;
-    types.resize(bmp_size,std::vector<int>(bmp_size,0));
+    
+    types=std::move(image<int>(bmp_size,bmp_size,8,8));
+    
     int bh = bare_types.size();
     int bw = bare_types[0].size();
     double r_factor = double(bh) / bmp_size;
@@ -822,14 +826,14 @@ void write_reference_bmp()
 {
     std::string fname = output_dir + "/ground_coverage.bmp";
     outfile f(fname);
-    int rows = types.size();
-    int cols = types[0].size();
+    int rows = types.height();
+    int cols = types.width();
     bmp::header hdr(rows,cols);
 
     f.write(&hdr,hdr.offset);
     
 	std::vector<bmp::rgbq> c(cols);
-    for(int i=types.size()-1;i>=0;i--) {
+    for(int i=types.height()-1;i>=0;i--) {
 		for(int j=0;j<cols;j++) {
 			unsigned char color = types[i][j];
             f.write(&color,1);
@@ -889,11 +893,11 @@ std::vector<float> get_kernel(int radius)
 	return prod(sec);
 }
 
-std::vector<std::vector<int> > expanded_types(int radius)
+image<int> expanded_types(int radius)
 {
-	int rows = types.size();
-	int cols = types[0].size();
-	std::vector<std::vector<int> > safetypes(rows + radius*2,std::vector<int>(cols+radius*2));
+	int rows = types.height();
+	int cols = types.width();
+    image<int> safetypes(rows + radius*2,cols + radius*2,8,8);
     for(int r=0;r<rows;r++) {
         for(int c=0;c<cols;c++) {
             safetypes[r+radius][c+radius]=types[r][c];
@@ -902,7 +906,7 @@ std::vector<std::vector<int> > expanded_types(int radius)
     for(int r=0;r<rows;r++) {
         for(int dc=0;dc<radius;dc++) {
             safetypes[r+radius][dc]=types[r][0];
-            safetypes[r+radius][radius + cols + dc]=types[r].back();
+            safetypes[r+radius][radius + cols + dc]=types[r][cols-1];
         }
     }
     for(int dr=0;dr<radius;dr++) {
@@ -911,7 +915,7 @@ std::vector<std::vector<int> > expanded_types(int radius)
             safetypes[radius + rows + dr][c]=safetypes[rows + radius - 1][c];
         }
     }
-    return safetypes;
+    return std::move(safetypes);
 }
 
 float low_pass_filter_splattype(int radius)
@@ -927,10 +931,11 @@ float low_pass_filter_splattype(int radius)
         ikernel[i] = kernel[i] / 16 * UINT_MAX;
     }
     int eradius = (radius + 3)/4*4;
-    std::vector<std::vector<int> > safetypes = expanded_types(eradius);
 
-	int rows = types.size();
-	int cols = types[0].size();
+    image<int> safetypes = std::move(expanded_types(eradius));
+
+	int rows = types.height();
+	int cols = types.width();
 
     #ifdef USE_SIMD
 
@@ -1045,8 +1050,8 @@ void write_gndtype()
 {
     std::string fname = output_dir + "/splattype.bmp";
     outfile f(fname);
-    int rows = types.size();
-    int cols = types[0].size();
+    int rows = types.height();
+    int cols = types.width();
     bmp::header hdr(4096,4096,32);
     f.write(&hdr,hdr.offset);
     std::vector<bmp::rgbq> c(cols);
@@ -1819,7 +1824,7 @@ void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &e
                 }
                 int t_r = factor_type * r / tsize;
                 int t_c = factor_type * c / tsize;
-                int type = types.at(t_r).at(t_c);
+                int type = types[t_r][t_c];
 
                 bool has_water=false;
                 bool has_ground=false;
@@ -2040,10 +2045,10 @@ struct cluster_data {
     }
 };
 
-cluster_data find_cluster(std::vector<std::vector<int> > &img,int r,int c)
+cluster_data find_cluster(image<int> &img,int r,int c)
 {
-    int rows = img.size();
-    int cols = img[0].size();
+    int rows = img.height();
+    int cols = img.width();
     double rs=0;
     double cs=0;
     cluster_data d=cluster_data();
@@ -2080,8 +2085,8 @@ cluster_data find_cluster(std::vector<std::vector<int> > &img,int r,int c)
 void mark_clusters()
 {
     std::priority_queue<cluster_data> clusters;
-    int rows = types.size();
-    int cols = types[0].size();
+    int rows = types.height();
+    int cols = types.width();
     for(int r=0;r<rows;r++) {
         for(int c=0;c<cols;c++) {
             if(types[r][c]==1) {
@@ -2115,8 +2120,8 @@ void mark_clusters()
 
 void mark_type_and_save(int type)
 {
-    int rows = types.size();
-    int cols = types[0].size();
+    int rows = types.height();
+    int cols = types.width();
     for(int r=0;r<rows;r++)
         for(int c=0;c<cols;c++)
             if(types[r][c]==type)
