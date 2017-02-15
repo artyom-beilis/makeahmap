@@ -72,6 +72,7 @@ private:
 		#endif
 		if(!ptr)
 			throw std::bad_alloc();
+		memset(ptr,0,size);
 		return ptr;
 	}
 	static void deallocate(void *p)

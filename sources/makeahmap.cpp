@@ -39,6 +39,7 @@
 #include <thread>
 #include <streambuf>
 #include <set>
+#include <functional>
 #include "bmp.h"
 #include "gshhs.h"
 #include "dem.h"
@@ -76,6 +77,7 @@ double water_to_land_slope = 0.1;
 int water_to_land_range = 100; // feet
 int splattype_filter_radius = 7;
 int check_updates=1;
+bool disable_sse=false;
 
 std::string map_name = "map";
 std::string tiff_file="./data/globcover/globcover.tif";
@@ -589,6 +591,9 @@ void load_profile(std::string file_name,std::ofstream &log)
 			else if(key == "check_updates") {
 				check_updates = atoi(value.c_str());
 			}
+			else if(key == "disable_sse") {
+				disable_sse = yesno(key,value);
+			}
             else if(key == "shores") {
                 shores = value;
             }
@@ -936,95 +941,108 @@ float low_pass_filter_splattype(int radius)
 
 	int rows = types.height();
 	int cols = types.width();
+	
+	std::function<void(int,int)> runner;
 
     #ifdef USE_SIMD
+	
+	if(!disable_sse 
+		&& __builtin_cpu_supports("sse3")
+		&& __builtin_cpu_supports("sse4.1") 
+		&& __builtin_cpu_supports("sse4.2"))
+	{
 
-    typedef unsigned int int4 __attribute__ ((vector_size(16)));
-    typedef unsigned int int4u __attribute__ ((vector_size(16),aligned(4)));
-    auto runner = [&](int from,int to) {	
-        for(int r=from;r<to;r++) {
-            for(int c=0;c<cols;c+=4) {
-                int ref_r = r+eradius;
-                int ref_c = c+eradius;
-                int4 sr[3][3] = {
-                    { *(int4u*)&safetypes[ref_r-1][ref_c-1],*(int4u*)&safetypes[ref_r-1][ref_c+0],*(int4u*)&safetypes[ref_r-1][ref_c+1] },
-                    { *(int4u*)&safetypes[ref_r  ][ref_c-1],*(int4u*)&safetypes[ref_r  ][ref_c+0],*(int4u*)&safetypes[ref_r  ][ref_c+1] },
-                    { *(int4u*)&safetypes[ref_r+1][ref_c-1],*(int4u*)&safetypes[ref_r+1][ref_c+0],*(int4u*)&safetypes[ref_r+1][ref_c+1] },
-                };
-                int4 blue =
-                                (sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
-                            + 2*(sr[1][0] & 0x1) + 4*(sr[1][1] & 0x1) + 2*(sr[1][2] & 0x1)
-                            +   (sr[2][0] & 0x1) + 2*(sr[2][1] & 0x1) +   (sr[2][2] & 0x1);
-                
-                int4 center = sr[1][1];
-                
-                blue = (blue * 255 + 8)/ 16;
+		typedef unsigned int int4 __attribute__ ((vector_size(16)));
+		typedef unsigned int int4u __attribute__ ((vector_size(16),aligned(4)));
+		
+		runner = [&](int from,int to) __attribute__((target("sse3"),target("sse4.1"),target("sse4.2"))) {	
+			for(int r=from;r<to;r++) {
+				for(int c=0;c<cols;c+=4) {
+					int ref_r = r+eradius;
+					int ref_c = c+eradius;
+					int4 sr[3][3] = {
+						{ *(int4u*)&safetypes[ref_r-1][ref_c-1],*(int4u*)&safetypes[ref_r-1][ref_c+0],*(int4u*)&safetypes[ref_r-1][ref_c+1] },
+						{ *(int4u*)&safetypes[ref_r  ][ref_c-1],*(int4u*)&safetypes[ref_r  ][ref_c+0],*(int4u*)&safetypes[ref_r  ][ref_c+1] },
+						{ *(int4u*)&safetypes[ref_r+1][ref_c-1],*(int4u*)&safetypes[ref_r+1][ref_c+0],*(int4u*)&safetypes[ref_r+1][ref_c+1] },
+					};
+					int4 blue =
+									(sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
+								+ 2*(sr[1][0] & 0x1) + 4*(sr[1][1] & 0x1) + 2*(sr[1][2] & 0x1)
+								+   (sr[2][0] & 0x1) + 2*(sr[2][1] & 0x1) +   (sr[2][2] & 0x1);
+					
+					int4 center = sr[1][1];
+					
+					blue = (blue * 255 + 8)/ 16;
 
-                if(blue[0] == 255 && blue[1] == 255 && blue[2]==255 && blue[3] == 255) {
-                    continue;
-                }
+					if(blue[0] == 255 && blue[1] == 255 && blue[2]==255 && blue[3] == 255) {
+						continue;
+					}
 
-                int4 red_sum    = {0,0,0,0};
-                int4 red_weight = {0,0,0,0};
-                int kp = 0;
-                for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
-                    for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
-                        int4 type = *(int4u*)&safetypes[ref_r+dr][ref_c+dc];
-                        unsigned int kv = ikernel[kp++];
-                        int4 weight = (type & 1) == 0 ? int4{kv,kv,kv,kv} : int4{0,0,0,0};
-                        red_weight += weight;
-                        red_sum    += weight * (type>>(16+4));
-                    }
-                }
-                int4 safe_red_weight = red_weight == 0 ? int4{1,1,1,1} : red_weight;
-                int4 red = red_weight == 0 ? int4{0,0,0,0} : ((red_sum + red_weight/2) / safe_red_weight) * 16;
-                int4 green = (center >> 8) & 0xFF;
-                
-                *(int4u*)&types[r][c] = blue == 255 ? center : ((red << 16) + (green << 8) + blue);
-            }
-        }
-    }; // runner*/
-    
-    #else
-    
-    auto runner = [&](int from,int to) {	
-        for(int r=from;r<to;r++) {
-            for(int c=0;c<cols;c++) {
-                int ref_r = r+eradius;
-                int ref_c = c+eradius;
-                int *sr[3] = {
-                    &safetypes[ref_r-1][ref_c-1],
-                    &safetypes[ref_r][ref_c-1],
-                    &safetypes[ref_r+1][ref_c-1]
-                };
-                unsigned blue =
-                                (sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
-                            + 2*(sr[1][0] & 0x1) + 4*(sr[1][1] & 0x1) + 2*(sr[1][2] & 0x1)
-                            +   (sr[2][0] & 0x1) + 2*(sr[2][1] & 0x1) +   (sr[2][2] & 0x1);
-                blue = (blue * 255 + 8)/ 16;
-                if(blue == 255)
-                    continue;
-
-                unsigned red_sum    = 0;
-                unsigned red_weight = 0;
-                int kp = 0;
-                for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
-                    for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
-                        unsigned type = safetypes[ref_r+dr][ref_c+dc];
-                        unsigned sum_factor  = (type & 1)  == 0; // blue == 0 for blue one of 0xFF or 0
-                        unsigned weight = sum_factor * ikernel[kp++];
-                        red_weight += weight;
-                        red_sum    += weight * (type >> (16 + 4));
-                    }
-                }
-                
-                unsigned red = ((red_sum + red_weight/2)/red_weight)*16;
-                unsigned green = (safetypes[ref_r][ref_c] >> 8) & 0xFF;
-                types[r][c] = (red << 16) + (green << 8) + blue;
-            }
-        }
-    };
+					int4 red_sum    = {0,0,0,0};
+					int4 red_weight = {0,0,0,0};
+					int kp = 0;
+					for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
+						for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
+							int4 type = *(int4u*)&safetypes[ref_r+dr][ref_c+dc];
+							unsigned int kv = ikernel[kp++];
+							int4 weight = (type & 1) == 0 ? int4{kv,kv,kv,kv} : int4{0,0,0,0};
+							red_weight += weight;
+							red_sum    += weight * (type>>(16+4));
+						}
+					}
+					int4 safe_red_weight = red_weight == 0 ? int4{1,1,1,1} : red_weight;
+					int4 red = red_weight == 0 ? int4{0,0,0,0} : ((red_sum + red_weight/2) / safe_red_weight) * 16;
+					int4 green = (center >> 8) & 0xFF;
+					
+					*(int4u*)&types[r][c] = blue == 255 ? center : ((red << 16) + (green << 8) + blue);
+				}
+			}
+		}; // runner*/
+		
+		std::cout << " using sse4.2 " << std::flush;
+    }
+	else 
     #endif
+	{
+		
+		runner = [&](int from,int to) {	
+			for(int r=from;r<to;r++) {
+				for(int c=0;c<cols;c++) {
+					int ref_r = r+eradius;
+					int ref_c = c+eradius;
+					int *sr[3] = {
+						&safetypes[ref_r-1][ref_c-1],
+						&safetypes[ref_r][ref_c-1],
+						&safetypes[ref_r+1][ref_c-1]
+					};
+					unsigned blue =
+									(sr[0][0] & 0x1) + 2*(sr[0][1] & 0x1) +   (sr[0][2] & 0x1)
+								+ 2*(sr[1][0] & 0x1) + 4*(sr[1][1] & 0x1) + 2*(sr[1][2] & 0x1)
+								+   (sr[2][0] & 0x1) + 2*(sr[2][1] & 0x1) +   (sr[2][2] & 0x1);
+					blue = (blue * 255 + 8)/ 16;
+					if(blue == 255)
+						continue;
+
+					unsigned red_sum    = 0;
+					unsigned red_weight = 0;
+					int kp = 0;
+					for(int dr=-radius,kr=0;dr<=radius;dr++,kr++) {
+						for(int dc=-radius,kc=0;dc<=radius;dc++,kc++) {
+							unsigned type = safetypes[ref_r+dr][ref_c+dc];
+							unsigned sum_factor  = (type & 1)  == 0; // blue == 0 for blue one of 0xFF or 0
+							unsigned weight = sum_factor * ikernel[kp++];
+							red_weight += weight;
+							red_sum    += weight * (type >> (16 + 4));
+						}
+					}
+					
+					unsigned red = ((red_sum + red_weight/2)/red_weight)*16;
+					unsigned green = (safetypes[ref_r][ref_c] >> 8) & 0xFF;
+					types[r][c] = (red << 16) + (green << 8) + blue;
+				}
+			}
+		};
+	}
    
 
     // split for multiple threads
