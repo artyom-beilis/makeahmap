@@ -1,3 +1,11 @@
+2017-02-15: Version 1.11
+
+- Fixed bug with not ignoring BOM for files in UTF-8 format with BOM 
+- Added workaround for non-reporducable crash issue
+  during splattype filtering.
+- Fixed download sourses for gshhs and gtopo30 - not gtopo30 can be used again
+- Fixed bug makeahmap didn't use command line argument for custom configuration file
+
 2017-02-10: Version 1.10
 
 - Fixed several issue with clipboard map generation: 
