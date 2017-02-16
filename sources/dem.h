@@ -32,6 +32,7 @@
 #include "downloader.h"
 
 namespace dem {
+    static const int16_t void_data = -9999;
     
     struct db_properties {
         int longitude_step;
@@ -99,16 +100,8 @@ namespace dem {
                 }
                 // fix void data
                 for(int i=0;i<real_cols_;i++) {
-                    static const int16_t void_data = -32768;
-                    if(new_row[i]==void_data) {
-                        if(i+1 < real_cols_ && new_row[i+1]!=void_data)
-                            new_row[i]=new_row[i+1];
-                        else if(i>0)
-                            new_row[i]=new_row[i-1];
-                        else if(row_ids_[0]!=-1) // valid row before
-                            new_row[i]=rows_[0][i];
-                        else
-                            new_row[i]=0;
+                    if(new_row[i]<=void_data) {
+                        new_row[i] = void_data;
                     }
                 }
                 current_pos_++;
@@ -186,12 +179,14 @@ namespace dem {
         fileio f_;
     };
 
-    std::vector<std::vector<int16_t> > read(db_properties const &p,int points,double lat1,double lat2,double lon1,double lon2)
+    std::vector<std::vector<int16_t> > read(db_properties const &p,int points,double lat1,double lat2,double lon1,double lon2,int &void_data_count)
     {
         if(lat1 > lat2)
             std::swap(lat1,lat2);
         if(lon1 > lon2)
             std::swap(lon1,lon2);
+
+        void_data_count = 0;
         std::vector<std::vector<int16_t> > elevations;
         
         elevations.resize(points,std::vector<int16_t>(points,0));
@@ -228,17 +223,23 @@ namespace dem {
                 int tid1  = (tile_c + offset + 1) / p.cols % tiles_no;
                 int toff1 = (tile_c + offset + 1) % p.cols;
                 
-                double c0r0 = tiles[tid0]->get(real_r,  toff0);
-                double c0r1 = tiles[tid0]->get(real_r+1,toff0);
+                int16_t c0r0 = tiles[tid0]->get(real_r,  toff0);
+                int16_t c0r1 = tiles[tid0]->get(real_r+1,toff0);
 
-                double c1r0 = tiles[tid1]->get(real_r,  toff1);
-                double c1r1 = tiles[tid1]->get(real_r+1,toff1);
+                int16_t c1r0 = tiles[tid1]->get(real_r,  toff1);
+                int16_t c1r1 = tiles[tid1]->get(real_r+1,toff1);
 
+                int iv;
 
-                double v = (c0r0 * cw0 + c1r0 * cw1) * rw0 + (c0r1 * cw0 + c1r1 * cw1) * rw1;
-                int iv = int(round(v * 3.28084));
-                //if(iv < 0)
-                //    iv = 0;
+                if(c0r0 != void_data && c0r1 != void_data && c1r0 != void_data && c1r1!=void_data) {
+                    double v = (c0r0 * cw0 + c1r0 * cw1) * rw0 + (c0r1 * cw0 + c1r1 * cw1) * rw1;
+                    iv = int(round(v * 3.28084));
+                }
+                else {
+                    iv = void_data;
+                    void_data_count ++;
+                }
+
                 elevations[r][c]=iv;
             }
         }

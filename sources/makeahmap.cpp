@@ -2150,6 +2150,110 @@ void mark_type_and_save(int type)
     write_reference_bmp();
 }
 
+void fix_periferal_elev(std::vector<std::vector<int16_t> > &elev)
+{
+    int rows = elev.size();
+    int cols = elev[0].size();
+    
+    int size = 2*(rows-2+cols);
+
+    auto get_r = [&](int pos) {
+        pos %= size;
+        if(pos < cols)
+            return 0;
+        pos -= cols;
+        if(pos < rows - 2)
+            return pos + 1;
+        pos -= rows - 2;
+        if(pos < cols)
+            return rows-1;
+        pos -= cols;
+        return rows - 2 - pos;
+    };
+
+    auto get_c = [&](int pos) {
+        pos %= size;
+        if(pos < cols)
+            return pos;
+        pos -= cols;
+        if(pos < rows - 2)
+            return cols - 1;
+        pos -= rows - 2;
+        if(pos < cols)
+            return cols-1 - pos;
+        return 0;
+    };
+    int start = -1;
+    for(int pos=0;pos<size;pos++) {
+        if(elev[get_r(pos)][get_c(pos)] != dem::void_data) {
+            start = pos;
+            break;
+        }
+    }
+    if(start == -1)
+        throw std::runtime_error("Too much invalid DEM data - aborting");
+
+    int16_t belev = 0;
+    for(int n=0;n<2*(rows+cols);n++) {
+        int begin = n + start;
+        int r=get_r(begin);
+        int c=get_c(begin);
+        if(elev[r][c] != dem::void_data) {
+            belev = elev[r][c];
+            continue;
+        }
+        int end = begin;
+        int16_t eelev;
+        while((eelev=elev[get_r(end+1)][get_c(end+1)])==dem::void_data)
+            end++;
+        int d=end - begin + 2;
+        int d2 = d/2;
+        for(int pos = begin;pos <= end;pos++) {
+            int w1 = d - (pos - begin + 1);
+            int w2 = pos - begin + 1;
+            int value = (belev * w1 +  eelev * w2 + d2) / d;
+            int r = get_r(pos),c=get_c(pos);
+            elev[r][c] = value;
+        }
+        n += d - 2;
+    }
+}
+
+void fix_elevations(std::vector<std::vector<int16_t> > &elev,int vertices)
+{
+    std::cout << "-- Fixing DEM missing data for " << vertices << " points... " << std::flush;
+    auto local_opt = solver_options;
+    local_opt.force_cpu = true;
+    std::unique_ptr<surface_solver_base> solver = get_solver(local_opt);
+    int rows = elev.size();
+    int cols = elev[0].size();
+    
+    fix_periferal_elev(elev);
+
+    std::vector<std::vector<char > >  bmask(rows,std::vector<char >(cols));
+    std::vector<std::vector<float> >  felev(rows,std::vector<float>(cols));
+
+    int16_t max_val = 0;
+    for(int r=0;r<rows;r++) {
+        for(int c=0;c<cols;c++) {
+            max_val = std::max(max_val,elev[r][c]);
+            bmask[r][c] = elev[r][c] != dem::void_data;
+            if(!bmask[r][c])
+                felev[r][c]=0;
+            else
+                felev[r][c]=elev[r][c];
+        }
+    }
+    surface_solver_base::stats st = solver->run(bmask,felev,0.0001);
+    for(int r=0;r<rows;r++) {
+        for(int c=0;c<cols;c++) {
+            if(!bmask[r][c])
+                elev[r][c] = int(felev[r][c] + 0.5f);
+        }
+    }
+    std::cout << "Done in " << st.time << std::endl;
+}
+
 int main(int argc,char **argv)
 {
     std::ofstream log("./output/log.txt");
@@ -2195,8 +2299,11 @@ int main(int argc,char **argv)
         }
  
         std::cout << "- Loading Digital Elevations Model data. " << std::endl;
-        std::vector<std::vector<int16_t> > tmp=dem::read(db_type,map_size*8,lat1,lat2,lon1,lon2);
-        elevations.swap(tmp);
+        int void_data_count=0;
+        elevations = std::move(dem::read(db_type,map_size*8,lat1,lat2,lon1,lon2,void_data_count));
+        
+        if(void_data_count > 0)
+            fix_elevations(elevations,void_data_count);
         
         water_generator gen(lat1,lat2,lon1,lon2,map_size * 8);
         std::cout << "- Loading & processing shores data. " << std::endl;
