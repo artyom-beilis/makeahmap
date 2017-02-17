@@ -422,7 +422,7 @@ std::pair<int,double> solve(int N,sparce_matrix const &A,float const *b,float *x
 	#endif
 	int iters;
 
-	auto runner = [&](int from,int to,int id) {	
+	auto runner = [&](int from,int to,int id) __attribute__((force_align_arg_pointer)) {	
 		double rsold = grsold;
 		int items = (to - from) / op_factor;
 		float_type *x_p  = (float_type*)(x+from);

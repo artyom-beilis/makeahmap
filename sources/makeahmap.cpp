@@ -943,7 +943,7 @@ float low_pass_filter_splattype(int radius)
 	int cols = types.width();
 	
 	std::function<void(int,int)> runner;
-
+	
     #ifdef USE_SIMD
 	
 	if(!disable_sse 
@@ -955,7 +955,7 @@ float low_pass_filter_splattype(int radius)
 		typedef unsigned int int4 __attribute__ ((vector_size(16)));
 		typedef unsigned int int4u __attribute__ ((vector_size(16),aligned(4)));
 		
-		runner = [&](int from,int to) __attribute__((target("sse3"),target("sse4.1"),target("sse4.2"))) {	
+		runner = [&](int from,int to) __attribute__((force_align_arg_pointer,target("sse3"),target("sse4.1"),target("sse4.2"))) {	
 			for(int r=from;r<to;r++) {
 				for(int c=0;c<cols;c+=4) {
 					int ref_r = r+eradius;
@@ -1057,7 +1057,7 @@ float low_pass_filter_splattype(int radius)
     for(int i=0;i<threads;i++) {
         tasks[i].join();
     }
-	
+
     auto end_ts = std::chrono::high_resolution_clock::now();
 	float time = std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1> > >(end_ts-start_ts).count();
     return time;
