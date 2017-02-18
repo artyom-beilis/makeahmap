@@ -81,7 +81,7 @@ int print_str_internal(char const *msg,int r,int c,int color,ImgType *img)
 		}
 		else {
 			int cols = print_char(*msg,r,c,color,img);
-			c+=cols + 1;
+			c+=cols;
 		}
 		msg++;
 	}
@@ -94,7 +94,7 @@ void print_str(char const *msg,int r,int c,int color,ImgType &img)
 	print_str_internal<ImgType>(msg,r,c,color,&img);
 }
 
-int get_print_str_len(char const *msg)
+inline int get_print_str_len(char const *msg)
 {
 	return print_str_internal<std::vector<std::vector<int> > >(msg,0,0,1,0);
 }

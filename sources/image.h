@@ -1,5 +1,7 @@
 #pragma once
 #include <stdlib.h>
+#include <string.h>
+#include <stdexcept>
 template<typename T>
 class image {
 public:

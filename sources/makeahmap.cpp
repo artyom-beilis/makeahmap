@@ -49,6 +49,7 @@
 #include "getversion.h"
 #include "font.h"
 #include "image.h"
+#include "text_to_image.h"
 
 std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
@@ -89,6 +90,7 @@ std::string tile_set_path = "./resources/groundmapping";
 std::string custom_mapping;
 std::string output_dir = "./output";
 std::string download_sources = "download_sources.txt";
+std::string cbm_labels;
 std::string temp_dir = "./temp";
 std::string cbm_grid_type = "game";
 bool auto_download_enabled = true;
@@ -540,6 +542,9 @@ void load_profile(std::string file_name,std::ofstream &log)
             else if(key == "cbm_size") {
                 cbm_size = atoi(value.c_str());
             }
+			else if(key == "cbm_labels") {
+				cbm_labels = value;
+			}
             else if(key == "cbm_grid") {
                 if(value == "game" || value=="geo" || value=="geo_dd" || value=="geo_dm") {
                     if(value == "geo")
@@ -1469,6 +1474,13 @@ void make_map_color_index(bmp::header &hdr)
         p->g=grid_color.g;
         p->b=grid_color.b;
     }
+    // text
+    {
+        bmp::rgbq *p = &hdr.ih.colors[252];
+        p->r=0;
+        p->g=0;
+        p->b=0;
+    }
 }
 
 int get_color_from_type(int type,double brightness_factor)
@@ -1825,6 +1837,15 @@ void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &e
         std::vector<std::vector<bool> > tmp = load_grid(1024);
         grid.swap(tmp);
     }
+	
+	std::vector<std::vector<bool> > labels;
+	if(!cbm_labels.empty()) {
+		labels.resize(tsize,std::vector<bool>(tsize));
+		render_text rnd(lat1,lat2,lon1,lon2,tsize);
+		rnd.load(cbm_labels);
+		rnd.optimize();
+		rnd.render(labels);
+	}
 
     bmp::header h(tsize,tsize);
     make_map_color_index(h);
@@ -1836,6 +1857,10 @@ void make_clipboard_map(int max_elev,std::vector<std::vector<int16_t> > const &e
     for(int r=tsize-1;r>=0;r--) {
         std::vector<unsigned char> colors(tsize);
         for(int c=0;c<tsize;c++) {
+				if(!labels.empty() && labels[r][c]) {
+					colors[c] = 252;
+					continue;
+				}
                 if(grid[r][c]) {
                     colors[c]=253; // grid;
                     continue;

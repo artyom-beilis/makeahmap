@@ -41,6 +41,7 @@ add_executable(makeahmap
 		downloader.cpp
 		url.cpp
 		surface.cpp
+		text_to_image.cpp
 		${EXTRASRC})
 
 
