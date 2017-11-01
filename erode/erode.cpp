@@ -4,6 +4,8 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <math.h>
+#include <assert.h>
 
 typedef std::vector<std::vector<float > > image_type;
 
@@ -58,33 +60,44 @@ void write_pgm(std::string const &name,image_type const &img)
 	}
 }
 
-std::pair<int,int> get_dir(image_type const &alt,int r,int c)
+std::pair<float,float> get_dir(image_type const &alt,int r,int c)
 {
 	float mv=alt[r][c];
-	int min_r = r;
-	int min_c = c;
-	for(int dr = -1;dr <= 1;dr++) {
-		for(int dc = -1;dc<=1;dc++) {
-			if(alt[r+dr][c+dc] < mv) {
-				mv = alt[r+dr][c+dc];
-				min_r = r+dr;
-				min_c = c+dc;
+	bool found = false;
+	for(int dr = -1;!found && dr <= 1;dr++) {
+		for(int dc = -1;!found && dc<=1;dc++) {
+			if(alt[r+dr][c+dc] + 1e-3> mv) {
+				found = true;
 			}
 		}
 	}
-	return std::make_pair(min_r,min_c);
+	if(!found) {
+		return std::make_pair(0.0f,0.0f);
+	}
+	float dx =   (2*alt[r][c-1] + alt[r-1][c-1] + alt[r+1][c-1])
+		   - (2*alt[r][c+1] + alt[r-1][c+1] + alt[r+1][c+1]);
+	float dy =   (2*alt[r-1][c] + alt[r-1][c-1] + alt[r-1][c+1])
+		   - (2*alt[r+1][c] + alt[r+1][c-1] + alt[r+1][c+1]);
+
+	float norm = sqrtf(dx*dx+dy*dy);
+	if(norm < 1e-5) {
+		float angle = 3.1415926f * 2.0f * rand() / RAND_MAX;
+		return std::make_pair(sinf(angle),cosf(angle));
+	}
+	else
+		return std::make_pair(dx / norm,dy / norm);
 }
 
 
 void rain(image_type &alt,int w,int h,int iterations)
 {
 	float const rain = 0.01f;
+	float const delta = 0.001f;
 	image_type water = vals(rain,w,h);
 	image_type d_water = vals(0,w,h);
 	image_type dissolved = vals(0,w,h);
 	image_type errode = vals(0,w,h);
 	image_type d_dissolved = dissolved;
-	float const delta = 0.01f;
 	for(int count = 0;count < iterations;count++) {
 		float evaporated = 0;
 		float evaporated_in_ponds = 0;
@@ -99,20 +112,36 @@ void rain(image_type &alt,int w,int h,int iterations)
 				}
 				else {
 					auto move_to = get_dir(alt,r,c);
-					int rnew = move_to.first;
-					int cnew = move_to.second;
-					if(move_to.first == r && move_to.second == c) {
+					float dx = move_to.first;
+					float dy = move_to.second;
+					if(dx == 0.0f && dy==0.0f) {
 						evaporated_in_ponds += water[r][c];
 						errode[r][c] -= dissolved[r][c];
+						//errode[r][c]  = 0;
 						d_water[r][c] = -water[r][c];
+						d_dissolved[r][c] = -dissolved[r][c];
 					}
 					else {
+						float wx = dx*dx;
+						float wy = dy*dy;
+						int rnew = dy < 0 ? r + 1 : r - 1;
+						int cnew = dx < 0 ? c + 1 : c - 1;
+						
+						float d_watr     = water[r][c];
 						float errode_one = delta * water[r][c];
-						errode[r][c] += errode_one;
-						d_dissolved[r   ][c   ] -= dissolved[r][c];
-						d_dissolved[rnew][cnew] += errode_one + dissolved[r][c];
-						d_water[r   ][c   ] -= water[r][c];
-						d_water[rnew][cnew] += water[r][c];
+						float diss       = dissolved[r][c];
+
+						errode     [r][c] += errode_one;
+						d_dissolved[r][c] -= diss;
+						d_water    [r][c] -= d_watr;
+
+						float d_diss = errode_one + diss;
+
+						d_dissolved[rnew][c] += d_diss * wy;
+						d_water    [rnew][c] += d_watr * wy;
+
+						d_dissolved[r][cnew] += d_diss * wx;
+						d_water    [r][cnew] += d_watr * wx;
 					}
 				}
 			}
@@ -134,16 +163,103 @@ void rain(image_type &alt,int w,int h,int iterations)
 			water[0][i]=0;
 			water[h-1][i]=0;
 		}
-		std::cout << remainder << " ev " << evaporated << " evp " << evaporated_in_ponds<< std::endl;
+		//std::cout << remainder << " ev " << evaporated << " evp " << evaporated_in_ponds<< std::endl;
 		if(remainder < delta)
 			break;
 	}
 }
 
-
-int main()
+void smooth(image_type &in,int times)
 {
+	image_type tmp = in;
+	int w = tmp.at(0).size();
+	int h = tmp.size();
+	for(int i=0;i<times;i++) {
+		for(int r=1;r<h-1;r++) {
+			for(int c=1;c<w-1;c++) {
+				tmp[r][c] = 
+					( 1*in[r-1][c-1] + 2*in[r-1][c  ] + 1*in[r-1][c+1] +
+					  2*in[r  ][c-1] + 4*in[r  ][c  ] + 2*in[r  ][c+1] +
+					  1*in[r+1][c-1] + 2*in[r+1][c  ] + 1*in[r+1][c+1] ) / 16;
+			}
+		}
+		tmp.swap(in);
+	}
+}
+
+
+void check(float &a,float &res,float d)
+{
+	a += d;
+	res += d;
+	if(a < 0) {
+		res += a;
+		a = 0.0f;
+	}
+}
+
+float update(image_type &alt,float r,float c,float delta)
+{
+	int ir = r;
+	int ic = c;
+	float wr = (c-ic);
+	float wl = 1.0f - wr;
+	float wb = (r-ir);
+	float wt = 1.0f - wb;
+
+	assert(ir >= 0);
+	assert(ic >= 0);
+	assert(ir+1 < int(alt.size()));
+	assert(ic+1 < int(alt.at(0).size()));
+
+	float res = 0;
+
+	check(alt[ir  ][ic  ],res,delta * wl*wt);
+	check(alt[ir  ][ic+1],res,delta * wr*wt);
+	check(alt[ir+1][ic  ],res,delta * wl*wb);
+	check(alt[ir+1][ic+1],res,delta * wr*wb);
+	return res;
+}
+
+void drop(image_type &alt)
+{
+	int w = alt.at(0).size();
+	int h = alt.size();
+	float r = rand() % h;
+	float c = rand() % w;
+	float dissolved = 0;
+	static const float remove = 0.01;
+	while(r >= 1 && r<h-2 && c>=1 && c<w-2) {
+		auto dir = get_dir(alt,int(r+0.5),int(c+0.5));
+		float dx = dir.first;
+		float dy = dir.second;
+		if(dx == 0.0f && dy==0.0f) {
+			update(alt,r,c,dissolved);
+			return;
+		}
+		float actual = update(alt,r,c,-remove);
+		std::cout << -actual << " " << remove << std::endl;
+		if(-actual < remove -  remove / 1000)
+			break;
+		r = r+dy;
+		c = c+dx;
+		dissolved += -actual;
+	}
+}
+
+
+int main(int argc,char **argv)
+{
+	int iterations = 100;
+	if(argc==2)
+		iterations = atoi(argv[1]);
 	image_type in = read_pgm("test.pgm");
-	rain(in,in.at(0).size(),in.size(),1000);
+	//rain(in,in.at(0).size(),in.size(),iterations);
+	for(int it=0;it < iterations;it++) {
+		for(size_t i=0;i<in.size()*in.size();i++)
+			drop(in);
+		smooth(in,1);
+		std::cout << it << std::endl;
+	}
 	write_pgm("res.pgm",in);
 }
