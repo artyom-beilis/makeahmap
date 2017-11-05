@@ -66,7 +66,7 @@ std::pair<float,float> get_dir(image_type const &alt,int r,int c)
 	bool found = false;
 	for(int dr = -1;!found && dr <= 1;dr++) {
 		for(int dc = -1;!found && dc<=1;dc++) {
-			if(alt[r+dr][c+dc] + 1e-3> mv) {
+			if(alt[r+dr][c+dc] < mv) {
 				found = true;
 			}
 		}
@@ -188,17 +188,17 @@ void smooth(image_type &in,int times)
 }
 
 
-void check(float &a,float &res,float d)
+bool check(float &a,float d)
 {
 	a += d;
-	res += d;
 	if(a < 0) {
-		res += a;
 		a = 0.0f;
+		return false;
 	}
+	return true;
 }
 
-float update(image_type &alt,float r,float c,float delta)
+bool update(image_type &alt,float r,float c,float delta)
 {
 	int ir = r;
 	int ic = c;
@@ -212,13 +212,11 @@ float update(image_type &alt,float r,float c,float delta)
 	assert(ir+1 < int(alt.size()));
 	assert(ic+1 < int(alt.at(0).size()));
 
-	float res = 0;
-
-	check(alt[ir  ][ic  ],res,delta * wl*wt);
-	check(alt[ir  ][ic+1],res,delta * wr*wt);
-	check(alt[ir+1][ic  ],res,delta * wl*wb);
-	check(alt[ir+1][ic+1],res,delta * wr*wb);
-	return res;
+	bool b1 = check(alt[ir  ][ic  ],delta * wl*wt);
+	bool b2 = check(alt[ir  ][ic+1],delta * wr*wt);
+	bool b3 = check(alt[ir+1][ic  ],delta * wl*wb);
+	bool b4 = check(alt[ir+1][ic+1],delta * wr*wb);
+	return b1 && b2 && b3 && b4;
 }
 
 void drop(image_type &alt)
@@ -228,7 +226,7 @@ void drop(image_type &alt)
 	float r = rand() % h;
 	float c = rand() % w;
 	float dissolved = 0;
-	static const float remove = 0.01;
+	static const float remove = 0.001;
 	while(r >= 1 && r<h-2 && c>=1 && c<w-2) {
 		auto dir = get_dir(alt,int(r+0.5),int(c+0.5));
 		float dx = dir.first;
@@ -237,13 +235,12 @@ void drop(image_type &alt)
 			update(alt,r,c,dissolved);
 			return;
 		}
-		float actual = update(alt,r,c,-remove);
-		std::cout << -actual << " " << remove << std::endl;
-		if(-actual < remove -  remove / 1000)
-			break;
+		if(!update(alt,r,c,-remove)) {
+			return;
+		}
 		r = r+dy;
 		c = c+dx;
-		dissolved += -actual;
+		dissolved += remove;
 	}
 }
 
@@ -251,14 +248,18 @@ void drop(image_type &alt)
 int main(int argc,char **argv)
 {
 	int iterations = 100;
-	if(argc==2)
+	char const *name="test.pgm";
+	if(argc>=2)
 		iterations = atoi(argv[1]);
-	image_type in = read_pgm("test.pgm");
+	if(argc>=3)
+		name = argv[2];
+	image_type in = read_pgm(name);
 	//rain(in,in.at(0).size(),in.size(),iterations);
 	for(int it=0;it < iterations;it++) {
 		for(size_t i=0;i<in.size()*in.size();i++)
 			drop(in);
-		smooth(in,1);
+		if(it%5 == 4) 
+			smooth(in,1);
 		std::cout << it << std::endl;
 	}
 	write_pgm("res.pgm",in);
