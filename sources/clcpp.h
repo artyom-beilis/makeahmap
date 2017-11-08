@@ -71,6 +71,13 @@ public:
 	cl_error(std::string const &msg,int code) : std::runtime_error("OpenCL: " + msg + ": " + std::to_string(code)) {}
 };
 
+struct nd_range {
+    explicit nd_range(size_t a) : dim(1), sizes{a} {}
+    explicit nd_range(size_t a,size_t b) : dim(2), sizes{a,b} {}
+    explicit nd_range(size_t a,size_t b,size_t c) :  dim(3), sizes{a,b,c} {}
+    int dim;
+    size_t sizes[3];
+};
 
 class context_with_program {
 public:
@@ -114,6 +121,10 @@ public:
 		ss << type << ": " <<n << "; computing units=" << mcu;
 		return ss.str();
 	}
+	void load(std::string const &prg)
+    {
+        load(prg.c_str());
+    }
 	void load(char const *prg)
 	{
 		int err = 0;
@@ -351,12 +362,53 @@ public:
 		bind(p);
 		bind_all(args...);
 	}
-	template<typename ...T>
+	
+   	template<typename ...T>
+	void operator()(nd_range const &nd,T const &...args)
+	{
+		reset();
+		bind_all(args...);
+		enqueue(nd);
+	}
+   	template<typename ...T>
+	void operator()(nd_range const &nd,nd_range const &lnd,T const &...args)
+	{
+		reset();
+		bind_all(args...);
+		enqueue(nd,lnd);
+	}
+ 
+    template<typename ...T>
 	void operator()(int items,T const &...args)
 	{
 		reset();
 		bind_all(items,args...);
 		enqueue(items);
+	}
+	void enqueue(nd_range const &nd) {
+#ifdef ENABLE_PROF 	
+		cl_event ev;
+		cl_event *ev_ptr = &ev;
+#else
+		cl_event *ev_ptr = 0;
+#endif
+		int err = clEnqueueNDRangeKernel(ctx_.queue(),kernel_, nd.dim, NULL, nd.sizes, 0 , 0, NULL, ev_ptr);
+		if(err!=CL_SUCCESS)
+			throw cl_error("Failed to enqueue kernel",err);
+#ifdef ENABLE_PROF 	
+		clWaitForEvents(1,&ev);
+		cl_ulong start=0,stop=0;
+		clGetEventProfilingInfo(ev,CL_PROFILING_COMMAND_START,sizeof(start),&start,0);
+		clGetEventProfilingInfo(ev,CL_PROFILING_COMMAND_END,sizeof(stop),&stop,0);
+		prof_.add_time(stop-start);
+#endif		
+	}
+	void enqueue(nd_range const &nd,nd_range const &lnd) {
+        if(nd.dim != lnd.dim)
+            throw cl_error("Local and global work group dimentions are different");
+		int err = clEnqueueNDRangeKernel(ctx_.queue(),kernel_, nd.dim, NULL, nd.sizes, lnd.sizes , 0, NULL, 0);
+		if(err!=CL_SUCCESS)
+			throw cl_error("Failed to enqueue kernel",err);
 	}
 	void enqueue(size_t d1,size_t d2) {
 		size_t sizes[]={d1,d2};

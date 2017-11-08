@@ -1,6 +1,8 @@
+sources/tags
 .directory
 makeahmap
 data
 output
 temp
 mine
+build
