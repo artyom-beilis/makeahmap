@@ -1,10 +1,17 @@
-#include <caffe/caffe.hpp>
+#ifdef USE_MXNET
+#include "mxnet_predict.h"
+#elif defined USE_TENSORRT
+#include "tensorrt_predict.h" 
+#else
+#include "caffe_predict.h"
+#endif
 
 #include <fstream>
+#include <sstream>
 #include <chrono>
-
-using namespace caffe;
-
+#include <map>
+#include <iostream>
+#include <string.h>
 
 std::vector<float> read_pgm(std::string const &name)
 {
@@ -66,6 +73,7 @@ std::map<std::string,std::vector<float> > load_universal_model(std::string const
     return result;
 }
 
+#if 0
 void update_network(Net<float> &net,std::map<std::string,std::vector<float> > const &data)
 {
     std::vector<boost::shared_ptr<Layer<float> > > const &layers = net.layers();
@@ -92,44 +100,34 @@ void update_network(Net<float> &net,std::map<std::string,std::vector<float> > co
         }
     }
 }
-
+#endif
 
 int main(int argc,char **argv)
 {
-    if(argc < 3) {
-	    std::cerr << argv[0] << " model trainedmodel [img1 img2 ... ]\n";
+    if(argc < 3+4) {
+	    std::cerr << argv[0] << " model batch channels height width trainedmodel [img1 img2 ... ]\n";
 	    return 1;
     }
     std::vector<std::string> files;
-    std::string model_file  = argv[1];
-    std::string trained_file = argv[2];
-    for(int i=3;i<argc;i++)
+    int batch = atoi(argv[1]);
+    int chan = atoi(argv[2]);
+    int height = atoi(argv[3]);
+    int width = atoi(argv[4]);
+    std::string model_file  = argv[1+4];
+    std::string trained_file = argv[2+4];
+    for(int i=3+4;i<argc;i++)
 	    files.push_back(argv[i]);
     
-    Caffe::set_mode(Caffe::GPU);
-    #ifdef USE_OCL
-    Caffe::SetDevice(0);
-    Net<float> net(model_file, TEST, Caffe::GetDefaultDevice());
-    #else
-    Caffe::SetDevice(0);
-    Net<float> net(model_file, TEST);
-    #endif
-    //net.CopyTrainedLayersFrom(trained_file);
-    update_network(net,load_universal_model(trained_file));
+    predictor::init();
 
-    Blob<float> *input  = net.input_blobs()[0];
-
-    int chan = input->channels();
-    int width = input->width();
-    int height = input->height();
+    predictor net(model_file,trained_file,batch,chan,height,width);
     
-    
-    float* input_data = input->mutable_cpu_data();
-    input->Reshape(files.size(),chan,height,width);
+    net.reshape(files.size());
+    float* input_data = net.input();
 
     for(size_t i=0;i<files.size();i++) {
 	    std::vector<float> f=read_pgm(files[i]);
-        size_t exp_size = chan*width*height;
+            size_t exp_size = chan*width*height;
 	    if(f.size()!=exp_size)
 		    throw std::runtime_error("Invalid file size for " + files[i]);
 	    memcpy(input_data + i * exp_size,f.data(),exp_size*sizeof(float));
@@ -137,20 +135,17 @@ int main(int argc,char **argv)
 
     auto start = std::chrono::high_resolution_clock::now();
     for(int i=0;i<1000;i++) {
-	    input->Reshape(files.size() /*- i%2*/,chan,height,width);
-	    input->mutable_cpu_data(); 
-	    net.Reshape();
-	    net.Forward();
-    	    Blob<float> *output = net.output_blobs()[0];
-    	    output->cpu_data();
+	    net.reshape(files.size());
+	    net.input();
+	    net.forward();
+	    net.result();
     }
     auto end = std::chrono::high_resolution_clock::now();
     double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(end-start).count();
 
-    Blob<float> *output = net.output_blobs()[0];
-    float const *output_data = output->cpu_data();
-    int classes = output->width()  * output->height() * output->channels();
-    int total = output->num();
+    float const *output_data = net.result();
+    int classes = net.classes();
+    int total = net.num();
     for(int i=0;i<total;i++) {
     	float mv = 0;
     	int mp = 0;
@@ -161,17 +156,12 @@ int main(int argc,char **argv)
     	    }
 	}
 		
-        printf("%2d: %2d %8.6f\n",i,mp,mv);
+        printf("RESULT: %2d: %2d %8.6f      :",i,mp,mv);
+	for(int j=0;j<classes;j++) {
+		printf("%5.3f ",output_data[i*classes+j]);
+	}
+	printf("\n");
     }
-    /*std::vector<boost::shared_ptr<Layer<float> > > const &layers = net.layers();
-    for(size_t i=0;i<layers.size();i++) {
-        std::cout << "Layer " << i << " " << net.layer_names()[i] << std::endl;
-        std::vector<boost::shared_ptr<Blob<float> > > const &blobs = layers[i]->blobs();
-        for(size_t j=0;j<blobs.size();j++) {
-            std::cout << "   " << j << ":" << blobs[j]->shape_string() << std::endl;
-        }
-    }*/
-
     std::cout << "Time " << time << " ms total " << (time / files.size()) << " per icon " << std::endl;
 
 }
