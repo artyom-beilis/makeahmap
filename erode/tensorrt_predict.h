@@ -32,7 +32,11 @@ public:
 		context_->destroy();
 		engine_->destroy();
 		runtime_->destroy();
-	}
+		cudaFreeHost(input_);
+		cudaFreeHost(output_);
+		cudaFree(dev_buffers_[0]);
+		cudaFree(dev_buffers_[1]);
+}
 	static void init()
 	{
 	}
@@ -42,7 +46,15 @@ public:
 		IBuilder* builder = createInferBuilder(logger_);
 		INetworkDefinition* network = builder->createNetwork();
 		ICaffeParser* parser = createCaffeParser();
-		IBlobNameToTensor const *blobNameToTensor = parser->parse(net.c_str(),trained.c_str(),*network,DataType::kFLOAT);
+		IBlobNameToTensor const *blobNameToTensor = 0;
+		if(getenv("ENABLE_HALF_MODE")) {
+			blobNameToTensor = parser->parse(net.c_str(),trained.c_str(),*network,DataType::kHALF);
+			builder->setHalf2Mode(true);
+		}
+		else {
+			blobNameToTensor = parser->parse(net.c_str(),trained.c_str(),*network,DataType::kFLOAT);
+		}
+
 
 		ITensor *output_blob = nullptr;
 		if(layer_name) {
@@ -83,8 +95,21 @@ public:
 		chan_=c;
 		height_=h;
 		width_=w;
-		input_.resize(batch_*chan_*height_*width_);
-		output_.resize(batch_*classes_);
+		void *p1,*p2;
+		cudaMallocHost(&p1,batch_*chan_*height_*width_*sizeof(float));
+		cudaMallocHost(&p2,batch_*classes_*sizeof(float));
+		input_ = static_cast<float*>(p1);
+		output_ = static_cast<float*>(p2);
+
+		{
+			ICudaEngine const &engine = context_->getEngine();
+			input_index_ = engine.getBindingIndex("data");
+			output_index_ = 1 - input_index_;
+			int input_size = batch_ * chan_ * height_ * width_;
+			int output_size = batch_ * classes_;
+			cudaMalloc(&dev_buffers_[input_index_],input_size * sizeof(float));
+			cudaMalloc(&dev_buffers_[output_index_],output_size * sizeof(float));
+		}
 	}
 	int channels() 
 	{
@@ -106,31 +131,28 @@ public:
 	}
 	float *input()
 	{
-		return input_.data();
+		return input_;
 	}
 	void forward()
 	{
-    		auto start = std::chrono::high_resolution_clock::now();
-		ICudaEngine const &engine = context_->getEngine();
-		void *dev_buffers[2];
-		int input_index = engine.getBindingIndex("data");
-		int output_index = 1 - input_index;
-		int input_size = curr_batch_ * chan_ * height_ * width_;
-		int output_size = curr_batch_ * classes_;
-		cudaMalloc(&dev_buffers[input_index],input_size * sizeof(float));
-		cudaMalloc(&dev_buffers[output_index],output_size * sizeof(float));
-
+	
+		int input_size = width_*height_*chan_*curr_batch_;
+		int output_size = classes_ * curr_batch_;
 		cudaStream_t stream;
 		cudaStreamCreate(&stream);
-		cudaMemcpyAsync(dev_buffers[input_index], input_.data(), input_size * sizeof(float), cudaMemcpyHostToDevice, stream);
-		context_->enqueue(curr_batch_, dev_buffers, stream, nullptr);
-		cudaMemcpyAsync(output_.data(), dev_buffers[output_index], output_size*sizeof(float), cudaMemcpyDeviceToHost, stream);
+    		auto start = std::chrono::high_resolution_clock::now();
+		cudaMemcpyAsync(dev_buffers_[input_index_], input_, input_size * sizeof(float), cudaMemcpyHostToDevice, stream);
+		context_->enqueue(curr_batch_, dev_buffers_, stream, nullptr);
+		cudaMemcpyAsync(output_, dev_buffers_[output_index_], output_size*sizeof(float), cudaMemcpyDeviceToHost, stream);
+    		auto e1 = std::chrono::high_resolution_clock::now();
 		cudaStreamSynchronize(stream);
+    		auto e2 = std::chrono::high_resolution_clock::now();
+    		double t1 = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(e1-start).count();
+    		double t2 = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1> > >(e2-start).count();
+		//std::cerr << t1 << " " << t2 << std::endl;
 		
 
 		cudaStreamDestroy(stream);
-		cudaFree(dev_buffers[input_index]);
-		cudaFree(dev_buffers[output_index]);
 	}
 	int classes()
 	{
@@ -143,7 +165,7 @@ public:
 	
 	float const *result()
 	{
-		return output_.data();
+		return output_;
 	}
 
 private:
@@ -153,6 +175,8 @@ private:
 	IExecutionContext *context_;
 
 	int batch_,curr_batch_,chan_,height_,width_,classes_;
-	std::vector<float> input_,output_;
+	int input_index_,output_index_;
+	float *input_,*output_;
+	void *dev_buffers_[2];
 
 };
