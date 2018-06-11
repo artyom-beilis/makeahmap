@@ -1,5 +1,8 @@
+import paths
 import sys
-sys.path.append('/opt/caffe/caffe-cuda-cudnn/python/')
+
+for p in paths.external:
+    sys.path.append(p)
 
 import caffe
 import lmdb
@@ -17,11 +20,10 @@ def load_frame(fname):
     frame=np.zeros([1201,1201])
     print "Opening ",fname
     with gzip.open(name, 'rb') as f:
-        for r in range(1201):
-            for c in range(1201):
-                v = f.read(2)
-                meters = struct.unpack('!h',v)[0]*1.0
-                frame[r,c]=meters
+        frame_str = f.read()
+        vals = np.fromstring(frame_str,dtype='int16')
+        vals.byteswap(True)
+        frame.flat = vals.flat
     return frame
 
 def get_smoothing_kernel(n):
@@ -49,23 +51,27 @@ def make_patches(frame,size,step):
             vmax = valid.max();
             if vmin < -1000 or vmax - vmin < 50:
                 continue
+            diff = vmax-vmin+100
+            vmin-=50
+            if diff < 500:
+                diff = 500
+
             patch = np.zeros([2,size,size])
-            patch[0,:,:] = frame_valid[r0:r0+size,c0:c0+size]
-            patch[1,:,:] = frame_smooth[r0:r0+size,c0:c0+size]
+            patch[0,:,:] = (frame_valid[r0:r0+size,c0:c0+size] - vmin) / diff;
+            patch[1,:,:] = (frame_smooth[r0:r0+size,c0:c0+size] - vmin) / diff;
 
             if False:
                 global counter
                 for k in range(2):
                     tmp=np.zeros([size,size]);
-                    tmp=patch[:,:,k]
-                    tmp=(tmp-tmp.min()) / (tmp.max() - tmp.min() + 1);
+                    tmp=patch[k,:,:]
                     imsave("res/%05d_%d.pgm" % (counter,k),tmp)
                 counter+=1
             yield patch
                 
 
 
-env = lmdb.open('db',map_size=16*1024*1024*1024)
+env = lmdb.open(db,map_size=16*1024*1024*1024)
 
 batch=env.begin(write=True)
 
@@ -80,6 +86,7 @@ for name in sys.argv[2:]:
         print "adding key",key
         if n % 100 == 0:
             batch.commit()
+            print "Commit"
             batch = env.begin(write=True)
 
 batch.commit()

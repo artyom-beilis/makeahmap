@@ -1,24 +1,8 @@
 layer {
-  name: "data"
-  type: "Data"
-  top: "data"
-  data_param {
-    source: "db"
-    batch_size: 32
-    backend: LMDB
-  }
-}
-
-layer {
-  name: "slice"
-  type: "Slice"
-  bottom: "data"
-  top: "expected"
+  name: "source"
+  type: "Input"
   top: "source"
-  slice_param {
-    axis: 1
-    slice_point: 1
-  }
+  input_param { shape { dim: 1 dim: 1 dim: 128 dim: 128 } }
 }
 
 layer {
@@ -436,28 +420,12 @@ layer {
   }
 }
 
-layer {
-  name: "loss"
-  type: "SigmoidCrossEntropyLoss"
-  bottom: "topconv"
-  bottom: "expected"
-  top: "cross_entropy_loss"
-  loss_weight: 1
-}
-
 
 layer {
   name: "sigmoid"
   type: "Sigmoid"
   bottom: "topconv"
-  top: "sig_topconv"
+  top: "generated"
 }
 
-layer {
-  name: "loss"
-  type: "EuclideanLoss"
-  bottom: "expected"
-  bottom: "sig_topconv"
-  top: "l2_loss"
-  loss_weight: 0
-}
+
