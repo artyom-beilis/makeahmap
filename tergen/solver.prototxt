@@ -1,5 +1,6 @@
 #net: "mnist_autoencoder.prototxt"
-net: "train_test.prototxt"
+#net: "train_test.prototxt"
+net: "train_test_euc.prototxt"
 base_lr: 1.0
 lr_policy: "fixed"
 momentum: 0.95
