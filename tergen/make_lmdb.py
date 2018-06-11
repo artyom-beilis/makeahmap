@@ -78,7 +78,7 @@ batch=env.begin(write=True)
 n=0
 for name in sys.argv[2:]:
     frame=load_frame(name)
-    for p in make_patches(frame,128,64):
+    for p in make_patches(frame,64,32):
         datum=caffe.io.array_to_datum(p)
         key = "%010d_%08d" % (random.randint(0,999999),n)
         batch.put(key , datum.SerializeToString())
