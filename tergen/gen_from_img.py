@@ -28,7 +28,7 @@ for name in sys.argv[3:]:
     sample=np.zeros([h,2*w])
     net.blobs[data_name].data.flat = img.flat
     net.forward()
-    gen = net.blobs['generated'].data
+    gen = net.blobs['topconv'].data
     sample[:,0:w]=img
     sample[:,w:2*w]=gen
     imsave("res/%05d.pgm" % counter,sample)

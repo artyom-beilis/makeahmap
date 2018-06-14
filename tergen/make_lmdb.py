@@ -15,6 +15,7 @@ from scipy.signal import convolve2d
 from scipy.misc import imsave
 
 db=sys.argv[1]
+label=int(sys.argv[2])
 
 def load_frame(fname):
     frame=np.zeros([1201,1201])
@@ -56,9 +57,13 @@ def make_patches(frame,size,step):
             if diff < 500:
                 diff = 500
 
-            patch = np.zeros([2,size,size])
+            if label == 0:
+                patch = np.zeros([2,size,size])
+            else:
+                patch = np.zeros([1,size,size])
             patch[0,:,:] = (frame_valid[r0:r0+size,c0:c0+size] - vmin) / diff;
-            patch[1,:,:] = (frame_smooth[r0:r0+size,c0:c0+size] - vmin) / diff;
+            if label == 0:
+                patch[1,:,:] = (frame_smooth[r0:r0+size,c0:c0+size] - vmin) / diff;
 
             if False:
                 global counter
@@ -76,16 +81,17 @@ env = lmdb.open(db,map_size=16*1024*1024*1024)
 batch=env.begin(write=True)
 
 n=0
-for name in sys.argv[2:]:
+for name in sys.argv[3:]:
     frame=load_frame(name)
     for p in make_patches(frame,64,32):
-        datum=caffe.io.array_to_datum(p)
+        datum=caffe.io.array_to_datum(p,label)
         key = "%010d_%08d" % (random.randint(0,999999),n)
         batch.put(key , datum.SerializeToString())
         n=n+1
         print "adding key",key
-        if n % 100 == 0:
+        if n % 256 == 0:
             batch.commit()
+            sys.exit()
             print "Commit"
             batch = env.begin(write=True)
 

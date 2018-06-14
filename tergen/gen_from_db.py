@@ -21,6 +21,8 @@ shape = net.blobs[data_name].shape
 h=shape[2]
 w=shape[3]
 
+print h,w
+
 env=lmdb.open(sys.argv[3])
 tx=env.begin()
 cur=tx.cursor()
@@ -32,6 +34,9 @@ for k,v in cur:
     datum = caffe.proto.caffe_pb2.Datum()
     datum.ParseFromString(v)
     tmp = caffe.io.datum_to_array(datum)
+    tmp2=tmp[1,:,:]
+    if tmp2.max() - tmp2.min() < 0.5:
+        continue
     net.blobs[data_name].data.flat = tmp[1,:,:].flat
     net.forward()
     gen = net.blobs['generated'].data
@@ -40,6 +45,6 @@ for k,v in cur:
     sample[:,2*w:3*w]=tmp[0,:,:]
     imsave("res/%05d.pgm" % counter,sample)
     counter+=1
-    if counter  > 50:
+    if counter  > 512:
         break
 
