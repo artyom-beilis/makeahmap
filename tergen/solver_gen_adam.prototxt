@@ -1,0 +1,16 @@
+#net: "mnist_autoencoder.prototxt"
+#net: "train_test.prototxt"
+net: "gan_train_gen.prototxt"
+
+lr_policy: "fixed"
+base_lr: 0.001
+momentum: 0.999
+momentum2: 0.99999
+
+display: 100
+max_iter: 200000
+snapshot: 5000
+snapshot_prefix: "snapshots/out_gen"
+# solver mode: CPU or GPU
+solver_mode: GPU
+type: "Adam"
