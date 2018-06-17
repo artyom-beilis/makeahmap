@@ -16,6 +16,14 @@ def conv_param(k,n):
                     weight_filler=dict(type="xavier"),
                     bias_filler=dict(type="constant"))
 
+def conv_param_nb(k,n):
+    return  dict(   num_output=n,
+                    bias_term=False,
+                    pad=k/2,
+                    kernel_size=k,
+                    stride=1,
+                    weight_filler=dict(type="xavier"))
+
 def ip_param(n):    
     return  dict(   num_output=n,
                     weight_filler=dict(type="xavier"),
@@ -24,19 +32,23 @@ def ip_param(n):
 def mynet(batch,steps,loss_type,dep=False,descr=False,part='gen'):
 
     conv_lr = [dict(lr_mult=1,decay_mult=1),dict(lr_mult=2,decay_mult=1)]
+    bcnv_lr = [dict(lr_mult=1,decay_mult=1)]
     scale_lr = [dict(lr_mult=1,decay_mult=1),dict(lr_mult=1,decay_mult=1)]
     bn_param = dict(eps=0.001,use_global_stats=False)
 
     fr_lr = [dict(lr_mult=0,decay_mult=0),dict(lr_mult=0,decay_mult=0)]
+    fr_clr = [dict(lr_mult=0,decay_mult=0)]
     fr_bn = dict(eps=0.001,use_global_stats=True)
 
     if part=='gen':
         gen_conv_lr = conv_lr
+        gen_bcnv_lr = bcnv_lr
         gen_scale_lr = scale_lr
         gen_bn_param = bn_param
         dsc_conv_lr = fr_lr
     else:
         gen_conv_lr = fr_lr
+        gen_bcnv_lr = fr_clr
         gen_scale_lr = fr_lr
         gen_bn_param = fr_bn
         dsc_conv_lr = conv_lr
@@ -50,19 +62,25 @@ def mynet(batch,steps,loss_type,dep=False,descr=False,part='gen'):
     else:
         if descr:
             if part == 'gen':
-                n.data,n.label = L.Data(data_param=dict(source="db",batch_size=batch,backend=P.Data.LMDB),ntop=2)
+                bs = batch
             else:
-                n.data,n.label = L.Data(data_param=dict(source="db",batch_size=batch/2,backend=P.Data.LMDB),ntop=2)
+                bs = batch / 2
         else:
-            n.data = L.Data(data_param=dict(source="db",batch_size=batch,backend=P.Data.LMDB))
+            bs = batch
+        n.data = L.Data(data_param=dict(source="db",batch_size=bs,backend=P.Data.LMDB))
         
         n.expected, n.source = L.Slice(n.data,slice_param=dict(axis=1,slice_point=1),ntop=2)
-        if part!='gen':
-            #n.data_ref,n.label_ref = L.Data(data_param=dict(source="db_ref",batch_size=batch/2,backend=P.Data.LMDB),ntop=2)
-            n.data_ref = L.Split(n.expected)
-            n.label_ref = L.DummyData(shape=[dict(dim=[batch/2])],data_filler=dict(value=1.0))
+        if descr:
+            if part!='gen':
+                #n.data_ref = L.Split(n.expected)
+                n.data_ref = L.Data(data_param=dict(source="db_ref",batch_size=batch/2,backend=P.Data.LMDB))
+                n.label_0 = L.DummyData(shape=[dict(dim=[batch/2])],data_filler=dict(value=0.0))
+                n.label_1 = L.DummyData(shape=[dict(dim=[batch/2])],data_filler=dict(value=1.0))
+                n.label = L.Concat(n.label_0,n.label_1,concat_param=dict(axis=0))
+            else:
+                n.label = L.DummyData(shape=[dict(dim=[batch])],data_filler=dict(value=1.0))
 
-    n.conv1 = L.Convolution(n.source,convolution_param=conv_param(5,16),param=gen_conv_lr)
+    n.conv1 = L.Convolution(n.source,convolution_param=conv_param_nb(3,16),param=gen_bcnv_lr)
     n.bn1   = L.BatchNorm(n.conv1,batch_norm_param=gen_bn_param)
     n.scale1= L.Scale(n.bn1,scale_param=sp,param=gen_scale_lr)
     n.scale1= L.ReLU(n.scale1)
@@ -75,12 +93,12 @@ def mynet(batch,steps,loss_type,dep=False,descr=False,part='gen'):
         bid2="step%d/bn2"   % k
         eid ="step%d/elt"   % k
         
-        n[cid1] = L.Convolution(n[inp],convolution_param=conv_param(3,16),param=gen_conv_lr)
+        n[cid1] = L.Convolution(n[inp],convolution_param=conv_param_nb(3,16),param=gen_bcnv_lr)
         n[bid1] = L.BatchNorm(n[cid1],batch_norm_param=gen_bn_param)
         n[bid1] = L.Scale(n[bid1],scale_param=sp,param=gen_scale_lr)
         n[bid1] = L.ReLU(n[bid1])
 
-        n[cid2] = L.Convolution(n[bid1],convolution_param=conv_param(3,16),param=gen_conv_lr)
+        n[cid2] = L.Convolution(n[bid1],convolution_param=conv_param_nb(3,16),param=gen_bcnv_lr)
         n[bid2] = L.BatchNorm(n[cid2],batch_norm_param=gen_bn_param)
         n[bid2] = L.Scale(n[bid2],scale_param=sp,param=gen_scale_lr)
         n[bid2] = L.ReLU(n[bid2])
@@ -89,7 +107,7 @@ def mynet(batch,steps,loss_type,dep=False,descr=False,part='gen'):
         inp = eid
 
     outname="topconv"
-    n[outname]=L.Convolution(n[inp],convolution_param=conv_param(5,1),param=gen_conv_lr)
+    n[outname]=L.Convolution(n[inp],convolution_param=conv_param(3,1),param=gen_conv_lr)
     n.generated=L.Sigmoid(n.topconv)
     if not dep:
         lw = 1 if part == 'gen' else 0
@@ -100,14 +118,11 @@ def mynet(batch,steps,loss_type,dep=False,descr=False,part='gen'):
             n.cross_entropy_loss=L.SigmoidCrossEntropyLoss(n.topconv,n.expected,name="loss",loss_weight=lw)
     if descr:
         if part!='gen':
-            n.desc_inp = L.Concat(n[outname],n.data_ref,concat_param=dict(axis=0))
-            #n.desc_lbl = L.Concat(n.label,n.label_ref,concat_param=dict(axis=0))
-            n.desc_lbl = L.Concat(n.label_ref,n.label,concat_param=dict(axis=0))
-            outname = "desc_inp"
-            label_name = "desc_lbl"
+            n.desc_inp = L.Concat(n.generated,n.data_ref,concat_param=dict(axis=0))
+            cinp = "desc_inp"
         else:
-            label_name = 'label'
-        n.d_conv1 = L.Convolution(n[outname],convolution_param=conv_param(5,32),param=dsc_conv_lr) 
+            cinp = "generated"
+        n.d_conv1 = L.Convolution(n[cinp],convolution_param=conv_param(5,32),param=dsc_conv_lr) 
         n.d_pool1 = L.Pooling(n.d_conv1,pooling_param=dict(kernel_size=3,stride=2,pool=P.Pooling.MAX)) 
         n.d_pool1 = L.ReLU(n.d_pool1)
         
@@ -119,7 +134,7 @@ def mynet(batch,steps,loss_type,dep=False,descr=False,part='gen'):
         #n.d_pool3 = L.Pooling(n.d_conv3,pooling_param=dict(kernel_size=3,stride=2,pool=P.Pooling.MAX)) 
         #n.d_pool3 = L.ReLU(n.d_pool3)
         
-        n.d_conv4 = L.Convolution(n.d_pool2,convolution_param=conv_param(5,64),param=dsc_conv_lr) 
+        n.d_conv4 = L.Convolution(n.d_pool2,convolution_param=conv_param(3,64),param=dsc_conv_lr) 
         n.d_pool4 = L.Pooling(n.d_conv4,pooling_param=dict(kernel_size=3,stride=2,pool=P.Pooling.MAX)) 
         n.d_pool4 = L.ReLU(n.d_pool4)
 
@@ -128,12 +143,14 @@ def mynet(batch,steps,loss_type,dep=False,descr=False,part='gen'):
         n.d_ip2 = L.InnerProduct(n.d_pool4,param=dsc_conv_lr,inner_product_param=ip_param(1))
 
             
-        n.sigmoid_loss = L.SigmoidCrossEntropyLoss(n.d_ip2,n[label_name],name="loss",loss_weight=1000)
+        n.sigmoid_loss = L.SigmoidCrossEntropyLoss(n.d_ip2,n.label,name="loss",loss_weight=100)
         n.score = L.Sigmoid(n.d_ip2)
-        n.lbl_flat=L.Reshape(n[label_name],reshape_param=dict(shape=dict(dim=[-1,1])))
+        n.lbl_flat=L.Reshape(n.label,reshape_param=dict(shape=dict(dim=[-1,1])))
         n.diff = L.Eltwise(n.score,n.lbl_flat,eltwise_param=dict(coeff=[1.0/batch,-1.0/batch]))
         n.error = L.Reduction(n.diff,reduction_param=dict(operation=P.Reduction.ASUM))
-        #n.score_out = L.Split(n.score)
+        #n.output = L.Split(n[cinp])
+        #n.output_labels = L.Split(n.score)
+        #n.inputs = n.source 
 
     return n
 
@@ -144,7 +161,7 @@ def print_to_file(name,n):
     f.close()
 
 
-batch=64
+batch=60
 res_steps=2
 loss='euc'
 #loss='cross_entropy'

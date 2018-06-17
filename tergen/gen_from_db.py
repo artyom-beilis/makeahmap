@@ -12,6 +12,8 @@ import struct
 from scipy.misc import imsave
 import numpy as np
 
+caffe.set_mode_gpu()
+caffe.set_device(0)
 net= caffe.Net(sys.argv[1],caffe.TEST)
 net.copy_from(sys.argv[2])
 
@@ -35,8 +37,6 @@ for k,v in cur:
     datum.ParseFromString(v)
     tmp = caffe.io.datum_to_array(datum)
     tmp2=tmp[1,:,:]
-    if tmp2.max() - tmp2.min() < 0.5:
-        continue
     net.blobs[data_name].data.flat = tmp[1,:,:].flat
     net.forward()
     gen = net.blobs['generated'].data
@@ -45,6 +45,7 @@ for k,v in cur:
     sample[:,2*w:3*w]=tmp[0,:,:]
     imsave("res/%05d.pgm" % counter,sample)
     counter+=1
-    if counter  > 512:
+    print "Generated %d" % counter
+    if counter  > 100:
         break
 

@@ -1,1 +1,1 @@
-solver_gen_adadelta.prototxt
+solver_gen_adam.prototxt
