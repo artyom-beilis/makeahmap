@@ -91,7 +91,6 @@ for name in sys.argv[3:]:
         print "adding key",key
         if n % 256 == 0:
             batch.commit()
-            sys.exit()
             print "Commit"
             batch = env.begin(write=True)
 

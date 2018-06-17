@@ -52,7 +52,7 @@ def make_patches(img,size):
         off = (size - 28)/2
         frame_valid[off:-off,off:-off]=img[k,:,:]
         #frame_smooth = convolve2d(frame_valid,kernel,mode='same')
-        frame_smooth = imresize(imresize(np.copy(frame_valid),[4,4]),[32,32])
+        frame_smooth = imresize(imresize(np.copy(frame_valid),[8,8]),[32,32])
         frame_valid = frame_valid/255.0
         frame_smooth = frame_smooth/255.0
 
