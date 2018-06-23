@@ -38,7 +38,8 @@ def mynet(batch,steps,loss_type,dep=False,descr=False,part='gen'):
 
     fr_lr = [dict(lr_mult=0,decay_mult=0),dict(lr_mult=0,decay_mult=0)]
     fr_clr = [dict(lr_mult=0,decay_mult=0)]
-    fr_bn = dict(eps=0.001,use_global_stats=True)
+    #fr_bn = dict(eps=0.001,use_global_stats=True)
+    fr_bn = dict(eps=0.001,use_global_stats=False)
 
     if part=='gen':
         gen_conv_lr = conv_lr

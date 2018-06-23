@@ -1,8 +1,6 @@
 import paths
 import sys
 
-for p in paths.external:
-    sys.path.append(p)
 
 import caffe
 import numpy as np
@@ -77,3 +75,4 @@ while gen_steps < 200000 and not stop:
             #slv_gen.snapshot()
             break
 slv_gen.snapshot() 
+slv_dsc.snapshot() 
