@@ -8,7 +8,8 @@
 template<typename Solver>
 class surface_solver : public surface_solver_base {
 public:
-	surface_solver() {}
+	template<typename ...T>
+	surface_solver(T... args) : slv(args...) {}
 	virtual ~surface_solver() {}
 	virtual std::string name()
 	{

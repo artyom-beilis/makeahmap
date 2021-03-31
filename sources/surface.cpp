@@ -15,10 +15,10 @@
 #endif
 
 extern "C" {
-	typedef surface_solver_base *(*get_gpu_solver_type)(char *,size_t);
+	typedef surface_solver_base *(*get_gpu_solver_type)(char *,size_t,int);
 }
 
-std::unique_ptr<surface_solver_base> load_gpu_solver()
+std::unique_ptr<surface_solver_base> load_gpu_solver(int pid)
 {
 	get_gpu_solver_type get_gpu_solver = nullptr;
 
@@ -52,7 +52,7 @@ std::unique_ptr<surface_solver_base> load_gpu_solver()
 	get_gpu_solver = reinterpret_cast<get_gpu_solver_type>(sym);
 
 	char buf[4096]="Unknown";
-	std::unique_ptr<surface_solver_base> r(get_gpu_solver(buf,sizeof(buf)));
+	std::unique_ptr<surface_solver_base> r(get_gpu_solver(buf,sizeof(buf),pid));
 	if(!r.get()) {
 		throw std::runtime_error(buf);
 	}
@@ -66,7 +66,7 @@ std::unique_ptr<surface_solver_base> get_solver(surface_solver_options const &op
 	
 	if(!opt.force_cpu) {
 		try {
-			ptr = std::move(load_gpu_solver());
+			ptr = std::move(load_gpu_solver(opt.platform_id));
 			if(!(ptr->is_cpu())) 
 				return std::move(ptr);
 			if(opt.allow_cpu) {

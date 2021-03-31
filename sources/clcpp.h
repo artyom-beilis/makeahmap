@@ -74,11 +74,12 @@ public:
 
 class context_with_program {
 public:
-	context_with_program() :
+	context_with_program(int platform = 0) :
 		context_(0),
 		queue_(0),
 		program_(0),
-		device_id_()
+		device_id_(),
+		platform_(platform)
 	{
 	}
 	~context_with_program()
@@ -117,9 +118,15 @@ public:
 	void load(char const *prg)
 	{
 		int err = 0;
-		cl_platform_id pid=0;
-		if((err = clGetPlatformIDs(1,&pid,NULL))!=CL_SUCCESS)
+		cl_platform_id pids[16];
+		cl_uint N=0;
+		if((err = clGetPlatformIDs(16,pids,&N))!=CL_SUCCESS)
 			throw cl_error("Failed to get platform ID",err);
+		if(N == 0)
+			throw cl_error("0 platform ids");
+		if(platform_ < 0 || platform_ >= int(N))
+			throw cl_error("Invalid requested platform " + std::to_string(platform_));
+		cl_platform_id pid = pids[platform_];
 		cl_device_id avail[4];
 		unsigned avail_no = 0;
 		if((err = clGetDeviceIDs(pid, CL_DEVICE_TYPE_ALL, 4, avail, &avail_no))!=CL_SUCCESS)
@@ -180,6 +187,7 @@ private:
 	cl_command_queue queue_;
 	cl_program program_;
 	cl_device_id device_id_;
+	int platform_;
 };
 
 template<typename Item>

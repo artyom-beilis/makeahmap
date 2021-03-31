@@ -695,6 +695,9 @@ void load_profile(std::string file_name,std::ofstream &log)
             else if(key == "solver_threshold") {
                 solver_options.threshold = atof(value.c_str());
             }
+            else if(key == "solver_platform_id") {
+                solver_options.platform_id = atoi(value.c_str());
+            }
             else if(key == "solver_initial_grid") {
                 // hidden
                 solver_options.initial_grid = atoi(value.c_str());

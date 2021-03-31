@@ -8,11 +8,13 @@ struct surface_solver_options {
 	bool force_cpu;
 	float threshold;
 	int initial_grid;
+	int platform_id;
 	surface_solver_options() :
 		allow_cpu(false),
 		force_cpu(false),
 		threshold(0.5),
-		initial_grid(256)
+		initial_grid(256),
+		platform_id(0)
 	{
 	}
 };

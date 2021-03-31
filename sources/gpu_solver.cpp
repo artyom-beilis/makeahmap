@@ -1,10 +1,10 @@
 #include "solver_ocl.h"
 #include "surface_solver.h"
 
-extern "C" surface_solver_base *get_gpu_solver(char *msg,size_t len)
+extern "C" surface_solver_base *get_gpu_solver(char *msg,size_t len,int platform_id)
 {
 	try {
-		surface_solver_base *ptr = new surface_solver<gpu::eq_solver>();
+		surface_solver_base *ptr = new surface_solver<gpu::eq_solver>(platform_id);
 		return ptr;
 	}
 	catch(std::exception const &e) {

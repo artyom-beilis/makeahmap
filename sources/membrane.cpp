@@ -20,7 +20,7 @@
 #include "solver_ocl.h"
 #endif
 
-void solve_surface(std::vector<std::vector<char> > const &bmask,std::vector<std::vector<float> > &bvalues,float thresh)
+void solve_surface(std::vector<std::vector<char> > const &bmask,std::vector<std::vector<float> > &bvalues,float thresh,int platform_id)
 {
 	int N=bmask.size();
 	std::vector<std::pair<int,int> > index;
@@ -48,7 +48,7 @@ void solve_surface(std::vector<std::vector<char> > const &bmask,std::vector<std:
 #else
 	static std::unique_ptr<eq_solver> slv_ptr;
 	if(!slv_ptr)
-		slv_ptr.reset(new eq_solver());	
+		slv_ptr.reset(new eq_solver(platform_id));	
 	eq_solver &Matrix = *slv_ptr;
 	Matrix.init_matrix(variables);
 #endif	

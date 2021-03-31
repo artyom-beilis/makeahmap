@@ -42,7 +42,8 @@ public:
 		assert(i<4);
 	}
 	context_with_program &context() { return ctx_; }
-	eq_solver() : 
+	eq_solver(int pid) : 
+		ctx_(pid),
 		mpl_(ctx_),
 		mpl_prod_(ctx_),
 		dot_prod_(ctx_),
