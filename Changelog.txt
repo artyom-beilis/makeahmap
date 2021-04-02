@@ -1,3 +1,10 @@
+2021-04-02: Version 1.13
+
+- Updated download sources with correct URLs
+- Added support of OpenCL GPU platform selection for water optimization
+- Added support of altitude offset according to user requests
+- Fixed grid for 256 miles map
+
 2017-02-17: Version 1.12
 
 - Fixed a bug causing the application to crash during splattype correction.
