@@ -46,6 +46,7 @@ namespace dem {
         std::string directory;
         std::string suffix;
         std::string code;
+        int altitude_offset;
     };
 
     class tile {
@@ -233,7 +234,7 @@ namespace dem {
 
                 if(c0r0 != void_data && c0r1 != void_data && c1r0 != void_data && c1r1!=void_data) {
                     double v = (c0r0 * cw0 + c1r0 * cw1) * rw0 + (c0r1 * cw0 + c1r1 * cw1) * rw1;
-                    iv = int(round(v * 3.28084));
+                    iv = int(round(v * 3.28084)) + p.altitude_offset;
                 }
                 else {
                     iv = void_data;
@@ -260,6 +261,7 @@ namespace dem {
         p.directory = "./data/srtm3";
         p.suffix = ".hgt";
         p.code = "srtm3";
+        p.altitude_offset=0;
         return p;
     }
 
@@ -275,6 +277,7 @@ namespace dem {
         p.latitude_first = false;
         p.top_left = true;
         p.suffix = ".DEM";
+        p.altitude_offset=0;
         return p;
     }
     inline db_properties srtm30()

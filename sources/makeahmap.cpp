@@ -55,6 +55,7 @@ std::vector<std::vector<int16_t> > elevations;
 int map_size = 512;
 int cbm_size = -1;
 int river_correction_limit = -1;
+int altitude_offset = 0;
 bool remove_entire_river = false;
 dem::db_properties db_type;
 
@@ -585,6 +586,10 @@ void load_profile(std::string file_name,std::ofstream &log)
                 else {
                     throw parsing_error("Invalid database type name " + value + " valid are srtm3, srtm30 or gtopo30");
                 }
+                db_type.altitude_offset = altitude_offset;
+            }
+            else if(key == "altitude_offset") {
+                altitude_offset = db_type.altitude_offset = atoi(value.c_str());
             }
             else if(key == "scale") {
                 via_scale = true;
